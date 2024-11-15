@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' blob:; script-src 'self'; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob: data: *; frame-src blob: data:; object-src blob: data:; form-action 'none';">
+<!-- 导入uikit -->
+<link rel="stylesheet" href="vendor/uikit/uikit.min.css" />
+<link rel="stylesheet" href="reader.css" />
+<title>NasCab Reader</title>
+
+<input type="file" id="file-input" hidden>
+<div id="drop-target" class="filter">
+    <div>
+        <svg class="icon empty-state-icon" width="72" height="72" aria-hidden="true">
+            <path
+                d="M36 18s-6-6-12-6-15 6-15 6v42s9-6 15-6 12 6 12 6c4-4 8-6 12-6s12 2 15 6V18c-6-4-12-6-15-6-4 0-8 2-12 6m0 0v42" />
+        </svg>
+        <h1>Drop a book here!</h1>
+        <p>Or <button id="file-button">choose a file</button> to open it.</p>
+    </div>
+</div>
+<div id="dimming-overlay" aria-hidden="true"></div>
+<!-- 左侧目录 能滑出的那个 -->
+<div id="side-bar">
+    <div id="side-bar-header">
+        <img id="side-bar-cover">
+        <div>
+            <p id="side-bar-title"></p>
+            <p id="side-bar-author"></p>
+        </div>
+    </div>
+    <div id="toc-view"></div>
+</div>
+<div id="header-bar" class="toolbar">
+    <button id="side-bar-button" aria-label="Show sidebar">
+        <svg class="icon" width="24" height="24" aria-hidden="true">
+            <path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
+        </svg>
+    </button>
+    <!-- 右上角设置按钮 -->
+    <div id="menu-button" class="menu-container" uk-toggle="target: #modal-setting">
+        <button aria-label="Show settings" aria-haspopup="true">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path
+                    d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
+                <circle cx="12" cy="12" r="3" />
+            </svg>
+        </button>
+    </div>
+</div>
+
+<!-- 设置菜单对话框 -->
+<div id="modal-setting" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body" style="background: var(--nas-bg-color);">
+        <!-- 背景色 -->
+        <div style="display: flex;justify-content: flex-start;align-items: center;margin-top: 10px;">
+            <div style="font-size: 14px;flex-shrink: 0;" id="txt_bg_color">背景颜色:</div>
+            <input id="setting-bg-color" style="margin-left: 10px;margin-right: 10px;" type="color">
+        </div>
+        <!-- 文字色 -->
+        <div style="display: flex;justify-content: flex-start;align-items: center;margin-top: 20px;">
+            <div style="font-size: 14px;flex-shrink: 0;" id="txt_font_color">正文字色:</div>
+            <input id="setting-font-color" style="margin-left: 10px;margin-right: 10px;" type="color">
+        </div>
+        <!-- 目录色 -->
+        <div style="display: flex;justify-content: flex-start;align-items: center;margin-top: 20px;">
+            <div style="font-size: 14px;flex-shrink: 0;" id="txt_a_color">链接字色:</div>
+            <input id="setting-a-font-color" style="margin-left: 10px;margin-right: 10px;" type="color">
+        </div>
+        <!-- 行间距 -->
+        <div style="display: flex;justify-content: space-between;align-items: center;margin-top: 20px;">
+            <div style="font-size: 14px;flex-shrink: 0;" id="txt_line_height">行间距:</div>
+            <input id="setting-input-line-height" min="1.1" max="5" step="0.2"
+                style="margin-left: 10px;margin-right: 10px;" class="uk-range" type="range">
+        </div>
+        <!-- 字重 -->
+        <div style="display: flex;justify-content: space-between;align-items: center;margin-top: 20px;">
+            <div style="font-size: 14px;flex-shrink: 0;" id="txt_font_weight">:</div>
+            <input id="setting-input-font-weight" min="100" max="900" step="100"
+                style="margin-left: 10px;margin-right: 10px;" class="uk-range" type="range">
+        </div>
+        <!-- 字号 -->
+        <div style="display: flex;justify-content: space-between;align-items: center;margin-top: 20px">
+            <div style="font-size: 14px;">A</div>
+            <input id="setting-input-font-size" min="0.5" max="3" step="0.2"
+                style="margin-left: 10px;margin-right: 10px;" class="uk-range" type="range">
+            <div style="font-size: 24px;">A</div>
+        </div>
+
+        <!-- 翻页方式 -->
+        <div style="display: flex;justify-content: flex-start;align-items: center;margin-top: 20px">
+            <div id="title_page" style="font-size: 14px;flex-shrink: 0;" id="txt_a_color">翻页方式:</div>
+            <div style="margin-left: 20px;display: flex;align-items: center;">
+                <input class="uk-radio" type="radio" name="pageinate" checked value="pageinate" id="radio_pageinate"> <label id="title_paginated"
+                    style="margin-right: 20px;margin-left:5px">左右翻页</label>
+                <input class="uk-radio" type="radio" name="pageinate" value="scroll" id="radio_scroll"> <label id="title_scrolled" style="margin-left:5px">上下滑动</label>
+            </div>
+        </div>
+
+        <!-- 恢复默认按钮 -->
+        <div style="text-align: center;margin-top: 20px;">
+            <button id="bt-restore-config" style="color:var(--nas-font-color)"
+                class="uk-button uk-button-default">恢复默认</button>
+        </div>
+    </div>
+</div>
+
+
+<div id="nav-bar" class="toolbar">
+    <!-- 上一页按钮 -->
+    <button id="left-button" aria-label="Go left">
+        <svg class="icon" width="24" height="24" aria-hidden="true">
+            <path d="M 15 6 L 9 12 L 15 18" />
+        </svg>
+    </button>
+    <input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks">
+    <datalist id="tick-marks"></datalist>
+    <!-- 下一页按钮 -->
+    <button id="right-button" aria-label="Go right">
+        <svg class="icon" width="24" height="24" aria-hidden="true">
+            <path d="M 9 6 L 15 12 L 9 18" />
+        </svg>
+    </button>
+</div>
+
+
+<!-- loading组件 -->
+<div id="loading"
+    style="position: fixed;text-align: center;top: 0;left: 0;width: 100%;height: 100%;display: flex;align-items: center;justify-content: center;">
+    <div uk-spinner></div>
+</div>
+<script src="vendor/uikit/uikit.min.js"></script>
+
+<script src="reader.js" type="module"></script>

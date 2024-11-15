@@ -1,0 +1,115 @@
+/* 全局隐藏滚动条 */
+::-webkit-scrollbar {
+  display: none;
+  width: 0 !important;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+/* 禁止整个页面的文本被选择 */  
+body {  
+  -webkit-user-select: none; /* Chrome all / Safari all */  
+  -moz-user-select: none;    /* Firefox all */  
+  -ms-user-select: none;     /* IE 10+ */  
+  user-select: none;         /* Likely future */  
+}  
+div {
+  scrollbar-width: none;
+}
+body {
+  height: 100%;
+  width: 100%;
+}
+.swiper {
+  height: 100%;
+  width: 100%;
+}
+.swiper-wrapper {
+  height: 100%;
+  width: 100%;
+}
+/* 设置导航按钮样式 */
+.swiper-button-prev,
+.swiper-button-next {
+  padding: 5px;
+  border-radius: 5px;
+  color: #3c4251;
+  background-color: rgba(200, 200, 200, 0.6);
+}
+/* .swiper-slide{
+  height: auto !important;
+} */
+.swiper-slide {
+  width: 100%;
+  overflow-y: scroll;
+  display: flex;
+}
+.swiper-slide-img-main {
+  object-fit: contain;
+  width: 100%;
+  padding: 1px;
+}
+
+/* 设置对话框 */
+.setting-item-root {
+  display: flex;
+  align-items: center;
+  margin-top: 15px;
+  .setting-options{
+    margin-left: 10px;
+  }
+}
+/* 预览模式提示框 底部 */
+.preview-menu-root{
+  visibility: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background: rgba(0,0,0,0.8);
+  z-index: 999;
+  height: 50px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+
+}
+/* 顶部预览进度 */
+.preview-progress-root{
+  visibility: hidden;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: rgba(0,0,0,0.8);
+  z-index: 999;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  padding-right: 30px;
+}
+.preview-progress-text{
+  color: white;
+  flex-shrink: 0;
+}
+.preview-progress-input{
+  padding-left: 10px;
+  padding-right: 20px;
+}
+
+.help-item{
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+  
+  .help-title{
+    font-weight: bold;
+    color: #333;
+  }
+  .help-content{
+    margin-left: 3px;
+    color: darkgray;  
+    font-weight: normal;
+  }
+}

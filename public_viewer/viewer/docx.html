@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>docx预览</title>
+    <link rel="stylesheet" href="js-preview-lib/docx.css" />
+    <script src="js-preview-lib/docx.umd.js"></script>
+</head>
+<body>
+<div id="docx"></div>
+
+<script>
+    const myDocxPreviewer = jsPreviewDocx.init(document.getElementById('docx'));
+
+    function getGetParameter(paramName) {
+        const params = new URLSearchParams(window.location.search);
+        return params.get(paramName);
+    }
+    let loadUrl = getGetParameter('fileUrl')
+    console.log("loadUrl",loadUrl)
+    myDocxPreviewer.preview(loadUrl).then(()=>{
+        console.log('预览完成',loadUrl);
+    }).catch(e=>{
+        console.log('预览失败', loadUrl);
+    })
+
+</script>
+</body>
+</html>
