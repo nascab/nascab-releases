@@ -44,8 +44,8 @@ Deployment:
 3. Enter the project root directory and use npm to install project dependencies, npm i  
 4. After the project dependencies are successfully installed, run the project: npm run app or node ./app/main.js  
 5. About 15 seconds after starting, the console will print the port where NasCab is running:  
-HTTP server is running: http://192.168.31.199:80  
-HTTPS server is running [HTTPS server is running]: https://192.168.31.199:443  
+HTTP server is running: http://192.168.xx.xx:3080  
+HTTPS server is running [HTTPS server is running]: https://192.168.xx.xx:3443  
 6. To access NasCab, simply open the displayed url using a browser
 7. Update version: Go to the project root directory and : git pull
 
