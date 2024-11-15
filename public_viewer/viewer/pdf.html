@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>pdf预览</title>
+    <script src="js-preview-lib/pdf.umd.js"></script>
+</head>
+<body>
+<div id="pdf"></div>
+
+<script>
+   
+    function getGetParameter(paramName) {
+        const params = new URLSearchParams(window.location.search);
+        let fileUrlEncoded = params.get(paramName)
+        return fileUrlEncoded;
+    }
+    let fileUrl = getGetParameter('fileUrl')
+    const myPdfPreviewer = jsPreviewPdf.init(document.getElementById('pdf'), {
+        onError: (e)=>{
+            console.log('发生错误', fileUrl)
+        },
+        onRendered: ()=>{
+            console.log('渲染完成',fileUrl)
+        }
+    });
+
+    console.log("fileUrl",fileUrl)
+    myPdfPreviewer.preview(fileUrl)
+</script>
+</body>
+</html>

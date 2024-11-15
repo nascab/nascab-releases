@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html style="width: 100%;height: 100%;">
+
+<head>
+    <!-- 漫画阅读器 -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' blob:; font-src 'self' data:;   script-src 'self' ; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob: data: *; frame-src blob: data:; object-src blob: data:; form-action 'none';">
+    <title>NasCab Comic Reader</title>
+
+    <link type="text/css" rel="stylesheet" href="./vendor/swiper/swiper-bundle.css" />
+    <link type="text/css" rel="stylesheet" href="./readerComic.css" />
+
+    <!-- 导入uikit -->
+    <link rel="stylesheet" href="vendor/uikit/uikit.min.css" />
+</head>
+
+<body>
+    <div class="swiper">
+        <div class="swiper-wrapper">
+        </div>
+        <div id="button_pre" class="swiper-button-prev"></div>
+        <div id="button_next" class="swiper-button-next"></div> <!--右箭头-->
+        <div class="swiper-scrollbar"></div>
+    </div>
+    <!-- 上方菜单条 -->
+    <div  uk-animation-slide-top " id="top-menu" style="  
+            visibility: visible;
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 40px;
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            z-index: 2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(202, 202, 202, 0.7);
+        ">
+        <!-- 当前第几页的显示 -->
+        <div style="height: 100%; display: flex;align-items: center;margin-left: 10px;color: #333;">
+            <span id="txt_current_page"></span>/<span id="txt_total_page"></span>
+        </div>
+        <div style="height:100%;display: flex;justify-content: flex-end;align-items: center;padding-right: 5px;">
+            <!-- 帮助按钮 -->
+            <img id="icon-help" uk-toggle="target: #dialog-help" style="height: 22px;width: 22px;cursor: pointer;"
+                src="./vendor/icons/help.png" />
+            <!-- 全屏按钮 -->
+            <img id="icon-fullcreen" style="height: 18px;width: 18px;cursor: pointer;margin-left: 15px;"
+                src="./vendor/icons/fullscreen.png" />
+            <!-- 预览grid按钮 -->
+            <img id="icon-grid" style="height: 23px;width: 23px;cursor: pointer;margin-left: 15px;"
+                src="./vendor/icons/grid.png" />
+            <!-- 自动播放 -->
+            <img id="icon-autoplay" style="height: 22px;width: 22px;cursor: pointer;margin-left: 15px;"
+                src="./vendor/icons/play.png" />
+            <!-- 下载按钮 -->
+            <img id="icon-download" style="height: 22px;width: 22px;cursor: pointer;margin-left: 15px;"
+                src="./vendor/icons/download.png" />
+            <!-- 设置按钮 -->
+            <img uk-toggle="target: #modal-setting" id="icon-setting"
+                style="height: 23px;width: 23px;cursor: pointer;margin-left: 15px;"
+                src="./vendor/icons/settings-fill.svg" />
+        </div>
+    </div>
+
+
+
+    <!-- 预览模式提示 顶部-->
+    <div id="preview-root" class="preview-menu-root">
+        <di style="display: flex;align-items: center;">
+            <div id="preview-text-title" style="margin-left: 10px;color: white;margin-right: 10px;">预览模式</div>
+        </di>
+        <!-- 退出预览模式的按钮 -->
+        <img id="preview-img-close" style="height: 25px;width: 25px; margin-right: 10px;cursor: pointer;"
+            src="./vendor/icons/close.png" />
+    </div>
+
+    <!-- 预览进度选择条 底部半透明 -->
+    <div id="preview-progress-root" class="preview-progress-root">
+        <div id="preview-text-progress" class="preview-progress-text"></div>
+        <input id="preview-input-progress" class="uk-range preview-progress-input" type="range">
+    </div>
+
+
+    <!-- 设置菜单对话框 -->
+    <div id="modal-setting" uk-modal style="z-index: 1099;">
+        <div class="uk-modal-dialog uk-modal-body" style="z-index: 1099;">
+            <div class="setting-item-root">
+                <div id="scale_text" style="flex-shrink: 0;">缩放模式</div>
+                <select class="uk-select setting-options" id="select_scale">
+                    <option id="scale_fit_screen" value="fitScreen"></option>
+                    <option id="scale_fit_width" value="fitWidth"></option>
+                </select>
+            </div>
+            <div class="setting-item-root">
+                <div id="width_padding_text" style="flex-shrink: 0;">边距</div>
+                <select class="uk-select setting-options" id="select_width_padding">
+                    <option value="0">0%</option>
+                    <option value="5">5%</option>
+                    <option value="10">10%</option>
+                    <option value="15">15%</option>
+                    <option value="20">20%</option>
+                    <option value="25">25%</option>
+                    <option value="30">30%</option>
+                    <option value="35">35%</option>
+                    <option value="40">40%</option>
+                </select>
+            </div>
+            <div class="setting-item-root">
+                <div id="layout_text" style="flex-shrink: 0;">页面布局</div>
+                <select class="uk-select setting-options" id="select_layout">
+                    <option id="layout_single" value="single"></option>
+                    <option id="layout_double" value="double"></option>
+                </select>
+            </div>
+            <div class="setting-item-root">
+                <div id="page_mode_text" style="flex-shrink: 0;">翻页模式</div>
+                <select class="uk-select setting-options" id="select_page_mode">
+                    <option id="page_paginated" value="paginated"></option>
+                    <option id="page_free" value="free"></option>
+                </select>
+            </div>
+            <div class="setting-item-root">
+                <div id="read_mode_text" style="flex-shrink: 0;">阅读模式</div>
+                <select class="uk-select setting-options" id="select_reading_mode">
+                    <option id="read_ltr" value="ltr"></option>
+                    <option id="read_rtl" value="rtl"></option>
+                    <option id="read_vertical" value="vertical"></option>
+                </select>
+            </div>
+            <div class="setting-item-root">
+                <div id="page_button" style="flex-shrink: 0;">翻页按钮</div>
+                <select class="uk-select setting-options" id="select_page_button">
+                    <option id="button_show" value="show"></option>
+                    <option id="button_hide" value="hide"></option>
+                </select>
+            </div>
+            <div class="setting-item-root">
+                <div id="bg_text" style="flex-shrink: 0;">背景颜色</div>
+                <input id="setting-bg-color" value="#FFFFFF" style="margin-left: 10px;margin-right: 10px;" type="color">
+            </div>
+            <div class="setting-item-root">
+                <div id="autoplay_text" style="flex-shrink: 0;">自动播放间隔</div>
+                <input id="input_autoplay_delay" class="uk-input"
+                    style="width: 80px;margin-left: 10px;margin-right: 10px;" type="number" value="10">s
+            </div>
+            <!-- 恢复默认按钮 -->
+            <div style="text-align: center;margin-top: 20px;">
+                <button id="bt-restore-config" style="color:var(--nas-font-color)"
+                    class="uk-button uk-button-default">恢复默认</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 帮助对话框 -->
+    <div id="dialog-help" uk-modal>
+        <div class="uk-modal-dialog uk-modal-body" id="dialog-help-content">
+            <h3 id="help-title">快捷键和操作说明</h3>
+            <div class="help-item">
+                <span class="help-title" id="help-updown-title">方向键上/下-: </span><span class="help-content"
+                    id="help-updown-content">图片可滑动时滑动图片,无法滑动时翻页-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-lr-title">方向键左/右-:</span> <span class="help-content"
+                    id="help-lr-content">直接翻页-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-c-title">按键C-: </span><span class="help-content"
+                    id="help-c-content">切换边距[仅'适配宽度'模式]-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-d-title">按键D-: </span><span class="help-content"
+                    id="help-d-content"></span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-f-title">按键F-: </span><span class="help-content"
+                    id="help-f-content">全屏-</span>
+            </div>
+
+            <div class="help-item">
+                <span class="help-title" id="help-h-title">按键H-: </span><span class="help-content"
+                    id="help-h-content"></span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-l-title">按键L-: </span><span class="help-content"
+                    id="help-l-content">从左到右-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-m-title">按键M-: </span><span class="help-content"
+                    id="help-m-content">从左到右-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-p-title">按键P-: </span><span class="help-content"
+                    id="help-p-content">开始/停止自动播放-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-r-title">按键R-: </span><span class="help-content"
+                    id="help-r-content">从右到左-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-s-title">按键S-: </span><span class="help-content"
+                    id="help-s-content">选择进度-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-v-title">按键V-: </span><span class="help-content"
+                    id="help-v-content">垂直-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-z-title">按键 z-: </span><span class="help-content"
+                    id="help-z-content"></span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-home-title">按键Home-: </span><span class="help-content"
+                    id="help-home-content">第一页-</span>
+            </div>
+            <div class="help-item">
+                <span class="help-title" id="help-end-title">按键End-: </span><span class="help-content"
+                    id="help-end-content">最后一页-</span>
+            </div>
+        </div>
+
+    </div>
+    </div>
+</body>
+<script src="vendor/uikit/uikit.min.js"></script>
+<script src="./vendor/swiper/swiper-bundle.js"></script>
+<!-- 最后导入这个 -->
+<script src="./readerComic.js" type="module"></script>
+
+</html>
