@@ -3,11 +3,14 @@
 ## 部署方式:
 - 1.在您的电脑上安装NodeJs运行环境[版本18或以上] 以及GIT命令行工具[或者其他git客户端]  
 
-- 2.将此项目代码下载到您的电脑上,使用命令行工具进入到您想保存NasCab的目录,运行命令: git clone https://github.com/nascab/nascab-releases.git  或者[Gitee] git clone https://gitee.com/nascab/nascab-releases-gitee
+- 2.将此项目代码下载到您的电脑上,使用命令行工具进入到您想保存NasCab的目录,运行命令: `git clone https://github.com/nascab/nascab-releases.git`  或者[Gitee] `git clone https://gitee.com/nascab/nascab-releases-gitee`
 
-- 3.进入到项目根目录cd nascab-releases,使用npm安装项目依赖, npm i  
+- 3.进入到项目根目录`cd nascab-releases`,使用npm安装项目依赖, `npm i `
 
-- 4.项目依赖安装成功后,运行项目: npm run app 或者 node ./app/main.js   
+
+- 4.项目依赖安装成功后,运行项目: `npm run app` 或者 `node ./app/main.js`
+- MacOS平台通过代码部署还需要授予ffmpeg和ffprobe可执行权限,在根目录下输入命令:` chmod -R 777 libs`,不授予可执行权限视频信息将无法读取
+
 
 - 5.启动大约15秒后,控制台会打印NasCab运行的端口:  
 ##### HTTP 服务正在运行[HTTP server is running] :http://192.168.xx.xx:3080  
@@ -15,11 +18,11 @@
 
 - 6.使用浏览器打开显示的网址即可访问NasCab  
 
-- 7.更新版本:进入到项目根目录,git pull  
+- 7.更新版本:进入到项目根目录,`git pull`  
  
-- 8.退出NasCab,在运行NasCab的命令行窗口使用Ctrl+C结束进程  
+- 8.退出NasCab,在运行NasCab的命令行窗口使用`Ctrl+C`结束进程  
 
-- 9.如果您在Windows平台下使用git代码方式部署,由于ffmpeg.exe超过github的100mb文件体积限制,windows平台所需的ffmpeg.exe文件托管在git lfs上,您还需要安装git lfs,然后在项目根目录执行: git lfs pull
+- 9.如果您在Windows平台下使用git代码方式部署,由于ffmpeg.exe超过github的100mb文件体积限制,windows平台所需的ffmpeg.exe文件托管在git lfs上,您还需要安装git lfs,然后在项目根目录执行: `git lfs pull`
 
 
 # 常见问题:  
@@ -49,11 +52,13 @@ Linux平台下,NasCab使用3080作为http协议的默认端口,3443作为https�
 
 - 1.Install NodeJs running environment version 18 or above git command line tool [or other git client] on your computer  
 
-- 2.Download this project code to your computer git clone https://github.com/nascab/nascab-releases.git  
+- 2.Download this project code to your computer `git clone https://github.com/nascab/nascab-releases.git  `
 
-- 3 Enter the project root directory and use npm to install project dependencies, npm i  
+- 3 Enter the project root directory and use npm to install project dependencies, `npm i`  
 
-- 4.After the project dependencies are successfully installed, run the project: npm run app or node ./app/main.js  
+- 4.After the project dependencies are successfully installed, run the project: `npm run app` or `node ./app/main.js`  
+- MacOS platform also needs to grant executable permissions to ffmpeg and ffprobe through code deployment. Enter the command in the root directory:  `chmod -R 777` , libs,Video information will not be read without granting executable permissions
+
 
 - 5.About 15 seconds after starting, the console will print the port where NasCab is running:  
 ##### HTTP server is running: http://192.168.xx.xx:3080  
@@ -61,9 +66,9 @@ Linux平台下,NasCab使用3080作为http协议的默认端口,3443作为https�
 
 - 6.To access NasCab, simply open the displayed url using a browser
 
-- 7.Update version: Go to the project root directory and : git pull
+- 7.Update version: Go to the project root directory and : `git pull`
 
-- 8.Exit NasCab: use Ctrl+C to end the process.
+- 8.Exit NasCab: use `Ctrl+C` to end the process.
 
 - 9.If you use git code to deploy under the Windows platform, since ffmpeg.exe exceeds the 100mb file size limit of Github, the ffmpeg.exe file required for the Windows platform is hosted on git lfs. You also need to install git lfs, and then Execute "git lfs pull" in the project root directory
 
