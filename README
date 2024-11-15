@@ -8,8 +8,8 @@ NasCab官方网站:https://www.nascab.cn
 3.进入到项目根目录,使用npm安装项目依赖, npm i  
 4.项目依赖安装成功后,运行项目: npm run app 或者 node ./app/main.js   
 5.启动大约15秒后,控制台会打印NasCab运行的端口:  
-HTTP 服务正在运行[HTTP server is running] : http://192.168.31.199:3080  
-HTTPS 服务正在运行[HTTPS server is running] : https://192.168.31.199:3443  
+HTTP 服务正在运行[HTTP server is running] : http://192.168.xx.xx:3080  
+HTTPS 服务正在运行[HTTPS server is running] : https://192.168.xx.xx:3443  
 6.使用浏览器打开显示的网址即可访问NasCab
 7.更新版本:进入到项目根目录,git pull
 8.退出NasCab,在运行NasCab的命令行窗口使用Ctrl+C结束进程
