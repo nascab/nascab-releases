@@ -1,2 +1,4 @@
 node_modules
 NVIDIA Corporation
+database\cities500.db-shm
+database\cities500.db-wal

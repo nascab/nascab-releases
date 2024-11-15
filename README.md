@@ -1,7 +1,7 @@
-#### 此项目为NasCab官方版本发布仓库,git源代码方式部署,支持Win,Linux,Mac等多个平台和架构,源代码部署方式资源占用少,效率高,支持设备广泛,推荐低配置系统使用此方式部署
+#### 此项目为NasCab官方版本发布仓库,git代码方式部署,支持Win,Linux,Mac等多个平台和架构,代码部署方式资源占用少,效率高,支持设备广泛,理论上支持NodeJs的系统都可以部署,推荐低配置系统使用此方式部署
 #### NasCab官方网站:https://www.nascab.cn
 ## 部署方式:
-- 1.在您的电脑上安装NodeJs运行环境 版本18或以上 git命令行工具[或者其他git客户端]  
+- 1.在您的电脑上安装NodeJs运行环境[版本18或以上] 以及GIT命令行工具[或者其他git客户端]  
 
 - 2.将此项目代码下载到您的电脑上,使用命令行工具进入到您想保存NasCab的目录,运行命令: git clone https://github.com/nascab/nascab-releases.git  或者[Gitee] git clone https://gitee.com/nascab/nascab-releases-gitee
 
