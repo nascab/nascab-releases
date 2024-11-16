@@ -5,7 +5,7 @@
 
 - 2.将此项目代码下载到您的电脑上,使用命令行工具进入到您想保存NasCab的目录,运行命令: `git clone https://github.com/nascab/nascab-releases.git`  或者[Gitee] `git clone https://gitee.com/nascab/nascab-releases-gitee`
 
-- 3.进入到项目根目录`cd nascab-releases`,使用npm安装项目依赖, `npm i `
+- 3.进入到项目根目录`cd nascab-releases`,使用npm安装项目依赖, `npm i ` 或者安装yarn(npm i -g yarn)后用 `yarn` 安装依赖
 
 
 - 4.项目依赖安装成功后,运行项目: `npm run app` 或者 `node ./app/main.js`
@@ -54,7 +54,7 @@ Linux平台下,NasCab使用3080作为http协议的默认端口,3443作为https�
 
 - 2.Download this project code to your computer `git clone https://github.com/nascab/nascab-releases.git  `
 
-- 3 Enter the project root directory and use npm to install project dependencies, `npm i`  
+- 3 Enter the project root directory and use npm to install project dependencies, `npm i`  or `yarn`
 
 - 4.After the project dependencies are successfully installed, run the project: `npm run app` or `node ./app/main.js`  
 - MacOS/Linux platform also needs to grant executable permissions to ffmpeg and ffprobe through code deployment. Enter the command in the root directory:  `chmod -R 777` , libs,Video information will not be read without granting executable permissions
