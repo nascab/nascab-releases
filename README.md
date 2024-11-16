@@ -9,7 +9,7 @@
 
 
 - 4.项目依赖安装成功后,运行项目: `npm run app` 或者 `node ./app/main.js`
-- MacOS平台通过代码部署还需要授予ffmpeg和ffprobe可执行权限,在根目录下输入命令:` chmod -R 777 libs`,不授予可执行权限视频信息将无法读取
+- MacOS/Linux平台通过代码部署还需要授予ffmpeg和ffprobe可执行权限,在根目录下输入命令:` chmod -R 777 libs`,不授予可执行权限视频信息将无法读取
 
 
 - 5.启动大约15秒后,控制台会打印NasCab运行的端口:  
@@ -57,7 +57,7 @@ Linux平台下,NasCab使用3080作为http协议的默认端口,3443作为https�
 - 3 Enter the project root directory and use npm to install project dependencies, `npm i`  
 
 - 4.After the project dependencies are successfully installed, run the project: `npm run app` or `node ./app/main.js`  
-- MacOS platform also needs to grant executable permissions to ffmpeg and ffprobe through code deployment. Enter the command in the root directory:  `chmod -R 777` , libs,Video information will not be read without granting executable permissions
+- MacOS/Linux platform also needs to grant executable permissions to ffmpeg and ffprobe through code deployment. Enter the command in the root directory:  `chmod -R 777` , libs,Video information will not be read without granting executable permissions
 
 
 - 5.About 15 seconds after starting, the console will print the port where NasCab is running:  
