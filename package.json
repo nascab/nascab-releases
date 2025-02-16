@@ -1,8 +1,7 @@
 {
   "name": "nascab",
-  "version": "3.5.3",
-  "versionCode": "353",
-  "isInternationalVersion": false,
+  "version": "3.5.4",
+  "versionCode": "354",
   "author": "NasCab <nascab@nas-cab.com>",
   "homepage": "https://www.nascab.cn",
   "private": true,
