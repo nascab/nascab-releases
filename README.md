@@ -10,6 +10,7 @@
 
 - 4.项目依赖安装成功后,运行项目: `npm run app` 或者 `node ./app/main.js`
 - MacOS/Linux平台通过代码部署还需要授予ffmpeg和ffprobe可执行权限,在根目录下输入命令:` chmod -R 777 libs`,不授予可执行权限视频信息将无法读取
+- 安装项目依赖还需要Python3和VisualStudio C++开发环境
 
 
 - 5.启动大约15秒后,控制台会打印NasCab运行的端口:  
