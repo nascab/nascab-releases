@@ -1,7 +1,5 @@
 [中文文档](README-ZH.md) | [English Documentation](README.md)
-
 NasCab is a software program for managing files, photos, movies, music and books. It supports remote access and can be used as an alternative to NAS (Network Attached Storage). It is implemented purely by software and does not require specific hardware support.
-
 ### This project is the NasCab official version release warehouse, deployed in git source code, and supports multiple platforms such as Win, Linux, and Mac.  
 # Deployment:  
 
