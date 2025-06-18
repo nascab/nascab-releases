@@ -161,5 +161,6 @@
   "ipv6addressNotFound": "IPV6 NOT FOUND",
   "netWorkRequestFail": "Network request failed",
   "httpsCertError": "https certs error",
-  "tmdbidNotFound": "TMDB ID not found, episode information cannot be added, please try scraping again"
+  "tmdbidNotFound": "TMDB ID not found, episode information cannot be added, please try scraping again",
+  "httpsCertCannotSet": "You have enabled the certificate provided by NasCab in DDNS and cannot set it to your own certificate"
 }

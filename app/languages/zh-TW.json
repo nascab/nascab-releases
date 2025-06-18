@@ -161,5 +161,6 @@
   "ipv6addressNotFound": "未找到ipv6地址",
   "netWorkRequestFail": "網絡請求失敗",
   "httpsCertError": "https證書錯誤",
-  "tmdbidNotFound": "未找到TMDB ID,無法補充劇集信息,請嘗試重新刮削"
+  "tmdbidNotFound": "未找到TMDB ID,無法補充劇集信息,請嘗試重新刮削",
+  "httpsCertCannotSet": "您設定了使用NasCab提供的證書，無法再設定為您自己的證書"
 }

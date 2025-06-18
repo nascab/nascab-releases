@@ -1,5 +1,5 @@
 {
-  "needRootPath": "您可能需要填写服务入口路径",
+  "needRootPath": "您可能需要填写服务入口路径,如:http(s)://xxx.xxx/入口路径",
   "serverRootError": "您设置的服务入口为系统保留关键字,请修改后提交",
   "needTMDBKey": "需要先设置TMDB KEY",
   "noSearchResult": "未搜索到结果",
@@ -161,5 +161,6 @@
   "ipv6addressNotFound": "未找到ipv6地址",
   "netWorkRequestFail": "网络请求失败",
   "httpsCertError": "https证书错误",
-  "tmdbidNotFound": "未找到TMDB ID,无法补充剧集信息,请尝试重新刮削"
+  "tmdbidNotFound": "未找到TMDB ID,无法补充剧集信息,请尝试重新刮削",
+  "httpsCertCannotSet": "您在DDNS中启用了NasCab提供的证书，无法再设置为您自己的证书"
 }
