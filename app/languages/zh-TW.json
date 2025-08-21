@@ -1,4 +1,7 @@
 {
+  "imageZipFail": "圖片壓縮失敗",
+  "imageTooLarge": "圖片尺寸過大",
+  "onlySupportImage": "只支援圖片類型",
   "needRootPath": "您可能需要填寫服務入口路徑",
   "serverRootError": "您設定的服務入口為系統保留關鍵字,請修改後提交",
   "needTMDBKey": "需要先設置TMDB KEY",
@@ -90,7 +93,7 @@
   "private.exportFail": "空間數據導出失敗",
   "private.exportSuc": "空間數據導出成功",
   "private.noExist": "空間不存在",
-  "private.exportNeedEmptyFolder": "導出目標文件夾必須是空的",
+  "private.exportNeedEmptyFolder": "目標文件夾必須是空的",
   "private.exportStart": "開始導出空間數據",
   "private.spaceNameTooLong": "空間名太長",
   "index.videoInfoReadFail": "視頻信息讀取失敗",

@@ -1,4 +1,7 @@
 {
+  "imageZipFail": "图片压缩失败",
+  "imageTooLarge": "图片尺寸过大",
+  "onlySupportImage": "只支持图片类型",
   "needRootPath": "您可能需要填写服务入口路径,如:http(s)://xxx.xxx/入口路径",
   "serverRootError": "您设置的服务入口为系统保留关键字,请修改后提交",
   "needTMDBKey": "需要先设置TMDB KEY",
@@ -90,7 +93,7 @@
   "private.exportFail": "空间数据导出失败",
   "private.exportSuc": "空间数据导出成功",
   "private.noExist": "空间不存在",
-  "private.exportNeedEmptyFolder": "导出目标文件夹必须是空的",
+  "private.exportNeedEmptyFolder": "目标文件夹必须是空的",
   "private.exportStart": "开始导出空间数据",
   "private.spaceNameTooLong": "空间名太长",
   "index.videoInfoReadFail": "视频信息读取失败",

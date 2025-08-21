@@ -1,4 +1,7 @@
 {
+  "imageZipFail": "Image compression failed",
+  "imageTooLarge": "Image size too large",
+  "onlySupportImage": "Only supports image type",
   "needRootPath": "You may need to fill in the service entry path",
   "serverRootError": "The service entry you set is a system reserved keyword, please modify it and submit",
   "needTMDBKey": "Need to set TMDB KEY first",
@@ -90,7 +93,7 @@
   "private.exportFail": "Private space data export failed",
   "private.exportSuc": "Private space data exported successfully",
   "private.noExist": "Space no exist",
-  "private.exportNeedEmptyFolder": "The export destination folder must be empty",
+  "private.exportNeedEmptyFolder": "The destination folder must be empty",
   "private.exportStart": "Start exporting spatial data",
   "private.spaceNameTooLong": "Space name too long",
   "index.videoInfoReadFail": "Failed to read video information",
