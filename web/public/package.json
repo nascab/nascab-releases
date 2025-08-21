@@ -1,7 +1,7 @@
 {
   "name": "nascab",
-  "version": "3.6.0",
-  "versionCode": "360",
+  "version": "3.6.1",
+  "versionCode": "361",
   "scripts": {
     "analyzer": "cross-env use_analyzer=true npm run build",
     "dev": "SET NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service serve",
