@@ -962,6 +962,12 @@ class TvVideoPlayerActivity : AppCompatActivity() {
         media.addOption(":network-caching=600")
         media.addOption(":file-caching=600")
         media.addOption(":http-reconnect")
+        // 中文字幕文件多为 GBK/GB18030 且无 BOM；VLC 探测不到 UTF-8 时默认回退 CP1252 会乱码。
+        // 必须作为 Media 输入选项（冒号前缀）而非 LibVLC 启动参数：子模块选项放启动参数在部分 VLC 构建上
+        // 会导致 libvlc_new 直接失败（can't create LibVLC instance 崩溃）；输入选项不被接受时仅被忽略。
+        // autodetect 开启时 VLC 先逐块校验 UTF-8，合法 UTF-8 字幕原样使用，仅 GBK 内容按 GB18030（GBK 超集）转换。
+        media.addOption(":subsdec-autodetect-utf8")
+        media.addOption(":subsdec-encoding=GB18030")
         media.setHWDecoderEnabled(true, false)
         if (noAudioMode) media.addOption(":no-audio")
         val subtitleUrl = selectedExternalSubtitleUrl()
