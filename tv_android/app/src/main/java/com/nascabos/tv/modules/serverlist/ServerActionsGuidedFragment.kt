@@ -163,6 +163,7 @@ class ServerActionsGuidedFragment : GuidedStepSupportFragment() {
                     updated.refreshToken,
                     updated.accessTokenExpiresAtEpochSec.takeIf { it > 0L },
                     updated.serverVersion.trim().takeIf { it.isNotEmpty() },
+                    updated.shellSupported,
                 )
                 logD("connect: tokens set baseUrlNow='${ApiController.baseUrl.trim()}' isP2pNow=${ApiController.isP2pMode} -> openHome()")
                 openHome()
@@ -406,6 +407,7 @@ class ServerActionsGuidedFragment : GuidedStepSupportFragment() {
                         updated.refreshToken,
                         updated.accessTokenExpiresAtEpochSec.takeIf { it > 0L },
                         updated.serverVersion.trim().takeIf { it.isNotEmpty() },
+                        updated.shellSupported,
                     )
                     logD("connectWithPassword: tokens set baseUrlNow='${ApiController.baseUrl.trim()}' isP2pNow=${ApiController.isP2pMode} -> openHome()")
                     openHome()

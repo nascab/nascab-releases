@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">Xóa</string>
     <string name="video_detail_delete_message">Xóa “%1$s”?</string>
     <string name="video_detail_delete_failed">Xóa thất bại</string>
+    <string name="video_detail_delete_confirm_path">Xác nhận xóa, đường dẫn: %1$s</string>
+    <string name="video_detail_delete_with_scrape">Đồng thời xóa nfo, áp phích, ảnh ngang của tệp</string>
+    <string name="video_detail_delete_recycle">Cho vào thùng rác hệ thống</string>
+    <string name="video_detail_delete_tv_folder_warning">Toàn bộ thư mục sẽ bị xóa, bao gồm tất cả các tập và tệp bên trong.</string>
     <string name="video_detail_play_failed">Không thể mở trình phát</string>
     <string name="video_detail_scan_queued">Đã xếp hàng quét</string>
     <string name="video_detail_seasons">Phần</string>

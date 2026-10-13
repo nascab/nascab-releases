@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">حذف</string>
     <string name="video_detail_delete_message">حذف \"%1$s\"؟</string>
     <string name="video_detail_delete_failed">فشل الحذف</string>
+    <string name="video_detail_delete_confirm_path">هل أنت متأكد أنك تريد حذف هذا العنصر؟ المسار: %1$s</string>
+    <string name="video_detail_delete_with_scrape">حذف أيضًا ملفات NFO/الملصقات/fanart ذات الصلة</string>
+    <string name="video_detail_delete_recycle">وضع في سلة المحذوفات</string>
+    <string name="video_detail_delete_tv_folder_warning">سيتم حذف المجلد بالكامل، بما في ذلك جميع الحلقات والملفات الموجودة بداخله.</string>
     <string name="video_detail_play_failed">لا يمكن فتح المشغل</string>
     <string name="video_detail_scan_queued">تمت إضافة المسح للقائمة</string>
     <string name="video_detail_seasons">المواسم</string>

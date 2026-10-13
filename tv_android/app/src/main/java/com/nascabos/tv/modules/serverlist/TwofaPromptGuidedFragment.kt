@@ -119,6 +119,7 @@ class TwofaPromptGuidedFragment : GuidedStepSupportFragment() {
                 updated.refreshToken,
                 updated.accessTokenExpiresAtEpochSec.takeIf { it > 0L },
                 updated.serverVersion.trim().takeIf { it.isNotEmpty() },
+                updated.shellSupported,
             )
 
             if (openHomeOnSuccess) {

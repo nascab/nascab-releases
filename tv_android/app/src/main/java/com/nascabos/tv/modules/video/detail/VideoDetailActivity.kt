@@ -74,6 +74,9 @@ class VideoDetailActivity : AppCompatActivity(), AppHostActivity {
     companion object {
         private const val EXTRA_INDEX_ID = "index_id"
 
+        /** 删除成功后通过 setResult 回传给上一页列表的 index_id（int） */
+        const val EXTRA_DELETED_INDEX_ID = "deleted_index_id"
+
         fun createIntent(context: Context, indexId: Int): Intent {
             return Intent(context, VideoDetailActivity::class.java).apply {
                 putExtra(EXTRA_INDEX_ID, indexId)

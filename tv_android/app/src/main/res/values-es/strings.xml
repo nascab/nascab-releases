@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">Eliminar</string>
     <string name="video_detail_delete_message">¿Eliminar \"%1$s\"?</string>
     <string name="video_detail_delete_failed">Error al eliminar</string>
+    <string name="video_detail_delete_confirm_path">¿Estás seguro de que quieres eliminar este elemento? Ruta: %1$s</string>
+    <string name="video_detail_delete_with_scrape">También eliminar los archivos NFO/pósters/fanart relacionados</string>
+    <string name="video_detail_delete_recycle">Poner en papelera</string>
+    <string name="video_detail_delete_tv_folder_warning">Se eliminará toda la carpeta, incluidos todos los episodios y los archivos que contiene.</string>
     <string name="video_detail_play_failed">No se puede abrir el reproductor</string>
     <string name="video_detail_scan_queued">Escaneo en cola</string>
     <string name="video_detail_seasons">Temporadas</string>

@@ -847,6 +847,7 @@ class HomeBrowseFragment : BrowseSupportFragment() {
                 server.refreshToken,
                 server.accessTokenExpiresAtEpochSec.takeIf { it > 0L },
                 server.serverVersion.trim().takeIf { it.isNotEmpty() },
+                server.shellSupported,
             )
             if (!prevTokens && mode != ApiController.DevConnectMode.Direct) {
                 if (isAdded) (activity as? AppHostActivity)?.showError(getString(R.string.error_not_logged_in))

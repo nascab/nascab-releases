@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">削除</string>
     <string name="video_detail_delete_message">「%1$s」を削除しますか？</string>
     <string name="video_detail_delete_failed">削除に失敗しました</string>
+    <string name="video_detail_delete_confirm_path">削除しますか？パス：%1$s</string>
+    <string name="video_detail_delete_with_scrape">関連する NFO/ポスター/ファンアートを削除する</string>
+    <string name="video_detail_delete_recycle">システムゴミ箱に入れる</string>
+    <string name="video_detail_delete_tv_folder_warning">フォルダ全体（すべてのエピソードと同梱ファイルを含む）が削除されます。</string>
     <string name="video_detail_play_failed">プレーヤーを開けません</string>
     <string name="video_detail_scan_queued">スキャンをキューに追加しました</string>
     <string name="video_detail_seasons">シーズン</string>

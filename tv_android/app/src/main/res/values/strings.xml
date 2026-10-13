@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">Delete</string>
     <string name="video_detail_delete_message">Delete “%1$s”?</string>
     <string name="video_detail_delete_failed">Delete failed</string>
+    <string name="video_detail_delete_confirm_path">Are you sure you want to delete this item? Path: %1$s</string>
+    <string name="video_detail_delete_with_scrape">Also delete the related NFO/posters/fanart</string>
+    <string name="video_detail_delete_recycle">Put in recycle bin</string>
+    <string name="video_detail_delete_tv_folder_warning">The entire folder will be deleted, including all episodes and files inside it.</string>
     <string name="video_detail_play_failed">Cannot open player</string>
     <string name="video_detail_scan_queued">Scan queued</string>
     <string name="video_detail_seasons">Seasons</string>

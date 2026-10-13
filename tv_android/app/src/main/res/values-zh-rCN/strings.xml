@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">删除</string>
     <string name="video_detail_delete_message">确认删除“%1$s”？</string>
     <string name="video_detail_delete_failed">删除失败</string>
+    <string name="video_detail_delete_confirm_path">是否确认删除，路径：%1$s</string>
+    <string name="video_detail_delete_with_scrape">同时删除文件对应的 nfo、海报、横版图</string>
+    <string name="video_detail_delete_recycle">放入系统回收站</string>
+    <string name="video_detail_delete_tv_folder_warning">将删除整个文件夹，包括其中的所有剧集和文件。</string>
     <string name="video_detail_play_failed">无法打开播放器</string>
     <string name="video_detail_scan_queued">已加入扫描队列</string>
     <string name="video_detail_seasons">季</string>

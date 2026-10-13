@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">Löschen</string>
     <string name="video_detail_delete_message">\"%1$s\" löschen?</string>
     <string name="video_detail_delete_failed">Löschen fehlgeschlagen</string>
+    <string name="video_detail_delete_confirm_path">Möchten Sie dieses Element wirklich löschen? Pfad: %1$s</string>
+    <string name="video_detail_delete_with_scrape">Zugehörige NFO/Poster/Fanart ebenfalls löschen</string>
+    <string name="video_detail_delete_recycle">In Papierkorb verschieben</string>
+    <string name="video_detail_delete_tv_folder_warning">Der gesamte Ordner wird gelöscht, einschließlich aller Episoden und aller darin enthaltenen Dateien.</string>
     <string name="video_detail_play_failed">Player kann nicht geöffnet werden</string>
     <string name="video_detail_scan_queued">Scan in Warteschlange</string>
     <string name="video_detail_seasons">Staffeln</string>

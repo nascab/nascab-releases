@@ -276,6 +276,7 @@ class AddEditServerGuidedFragment : GuidedStepSupportFragment() {
                 updated.refreshToken,
                 updated.accessTokenExpiresAtEpochSec.takeIf { it > 0L },
                 updated.serverVersion.trim().takeIf { it.isNotEmpty() },
+                updated.shellSupported,
             )
             val fm = requireActivity().supportFragmentManager
             repeat(popCount.coerceAtMost(10)) { fm.popBackStack() }

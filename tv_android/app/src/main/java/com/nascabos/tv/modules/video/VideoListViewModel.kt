@@ -168,6 +168,16 @@ class VideoListViewModel(
             }
     }
 
+    /**
+     * 详情页删除成功后乐观移除：服务端 video_index 重扫有延迟，立即重新拉取可能又拉回已删项。
+     * 同时清掉历史列表的本地缓存，避免下次刷新时又出现。
+     */
+    fun removeDeletedItem(indexId: Int) {
+        if (indexId <= 0) return
+        historyItems = historyItems.filterNot { it.id == indexId }
+        _state.update { s -> s.copy(items = s.items.filterNot { it.id == indexId }) }
+    }
+
     fun loadMore() {
         if (isHistoryList) return
         val s = _state.value

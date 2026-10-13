@@ -86,12 +86,27 @@ class VideoDetailViewModel(
         }
     }
 
-    fun deleteItem(onDone: (Boolean) -> Unit) {
-        val item = _state.value.data?.item ?: return
+    fun deleteItem(
+        targetPath: String,
+        deleteScrapeFiles: Boolean,
+        recycle: Boolean = false,
+        onDone: (Boolean) -> Unit,
+    ) {
+        val target = targetPath.trim()
+        if (target.isEmpty()) {
+            onDone(false)
+            return
+        }
         viewModelScope.launch {
             val ok =
                 withContext(Dispatchers.IO) {
-                    runCatching { VideoDetailApiService.deleteByPath(item.fullPath) }.getOrNull() == true
+                    runCatching {
+                        VideoDetailApiService.deleteByPath(
+                            fullPath = target,
+                            deleteScrapeFiles = deleteScrapeFiles,
+                            recycle = recycle,
+                        )
+                    }.getOrNull() == true
                 }
             onDone(ok)
         }

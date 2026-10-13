@@ -1,6 +1,7 @@
 package com.nascabos.tv.modules.video
 
 import android.app.Application
+import android.app.Activity
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -13,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.fragment.app.viewModels
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.leanback.app.VerticalGridSupportFragment
 import androidx.leanback.widget.ArrayObjectAdapter
 import androidx.leanback.widget.VerticalGridView
@@ -48,6 +50,14 @@ class VideoGridFragment : VerticalGridSupportFragment() {
     }
 
     private val adapter by lazy { ArrayObjectAdapter(VideoCardPresenter(requireContext())) }
+
+    // 详情页删除成功后返回，列表立即移除对应项
+    private val detailLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+            val deletedId = result.data?.getIntExtra(VideoDetailActivity.EXTRA_DELETED_INDEX_ID, 0) ?: 0
+            if (deletedId > 0) viewModel.removeDeletedItem(deletedId)
+        }
     private var lastRenderedCount: Int = 0
     private var lastState: VideoListUiState? = null
     private var headerAdded: Boolean = false
@@ -267,8 +277,14 @@ class VideoGridFragment : VerticalGridSupportFragment() {
             lastRenderedCount = 0
             return
         }
-        // 列表被替换或截断（如 refresh）→ 全量刷新
+        // 列表被替换或截断（如 refresh / 删除）：优先做仅移除的差量更新，保住滚动位置；
+        // 新序列不是旧序列的有序子序列（有重排/替换）时才全量重建
         if (items.size < lastRenderedCount) {
+            if (applyRemovalDiff(items)) {
+                lastRenderedCount = items.size
+                lastItemsSignature = sig
+                return
+            }
             adapter.clear()
             items.forEach { adapter.add(it) }
             lastRenderedCount = items.size
@@ -292,11 +308,49 @@ class VideoGridFragment : VerticalGridSupportFragment() {
         lastItemsSignature = sig
     }
 
+    /**
+     * 仅移除差量：当 newItems 是当前 adapter 内容的有序子序列（只删了若干项、无重排）时，
+     * 按区间调用 removeItems 通知网格局部刷新，避免 clear 导致滚动位置跳回顶部。
+     * @return 是否成功按差量移除；false 表示序列关系不成立，调用方应全量重建
+     */
+    private fun applyRemovalDiff(newItems: List<VideoListItem>): Boolean {
+        val oldSize = adapter.size()
+        if (oldSize == 0 || newItems.size >= oldSize) return false
+
+        val removePositions = mutableListOf<Int>()
+        var newIdx = 0
+        for (oldIdx in 0 until oldSize) {
+            val oldItem = adapter.get(oldIdx) as? VideoListItem ?: return false
+            if (newIdx < newItems.size && oldItem.id == newItems[newIdx].id) {
+                newIdx++
+            } else {
+                removePositions.add(oldIdx)
+            }
+        }
+        // 新序列所有项都必须在旧序列中按序匹配上
+        if (newIdx != newItems.size) return false
+        if (removePositions.size != oldSize - newItems.size) return false
+
+        // 从后往前按连续区间删除，保证未处理区间的位置不失效
+        var i = removePositions.lastIndex
+        while (i >= 0) {
+            val end = removePositions[i]
+            var start = end
+            while (i - 1 >= 0 && removePositions[i - 1] == start - 1) {
+                start = removePositions[i - 1]
+                i--
+            }
+            adapter.removeItems(start, end - start + 1)
+            i--
+        }
+        return true
+    }
+
     private fun openPlaceholder(video: VideoListItem) {
         val id = video.id
         if (id <= 0) return
         val ctx = context ?: return
-        startActivity(VideoDetailActivity.createIntent(ctx, id))
+        detailLauncher.launch(VideoDetailActivity.createIntent(ctx, id))
     }
 
     fun openOptionsFromActivity() {

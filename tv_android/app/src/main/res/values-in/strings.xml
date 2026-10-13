@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">Hapus</string>
     <string name="video_detail_delete_message">Hapus "%1$s"?</string>
     <string name="video_detail_delete_failed">Gagal menghapus</string>
+    <string name="video_detail_delete_confirm_path">Konfirmasi untuk menghapus, jalur: %1$s</string>
+    <string name="video_detail_delete_with_scrape">Hapus juga file nfo, poster, dan fanart yang terkait</string>
+    <string name="video_detail_delete_recycle">Masukkan ke tempat sampah sistem</string>
+    <string name="video_detail_delete_tv_folder_warning">Seluruh folder akan dihapus, termasuk semua episode dan file di dalamnya.</string>
     <string name="video_detail_play_failed">Tidak dapat membuka pemutar</string>
     <string name="video_detail_scan_queued">Pindai diantrekan</string>
     <string name="video_detail_seasons">Musim</string>

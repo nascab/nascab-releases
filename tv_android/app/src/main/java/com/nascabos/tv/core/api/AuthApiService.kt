@@ -162,6 +162,10 @@ object AuthApiService {
             pairCode = map["pairCode"]?.toString(),
             twoFactorRequired = map["twoFactorRequired"] as? Boolean,
             tempToken = map["tempToken"]?.toString(),
+            shellSupported =
+                map["shellSupported"] == true ||
+                    map["shellSupported"] == 1 ||
+                    map["shellSupported"]?.toString() == "1",
         )
     }
 
@@ -243,6 +247,8 @@ object AuthApiService {
             serverHostName = login.hostname?.toString().orEmpty().ifEmpty { serverInfo.serverHostName },
             serverPortHttp = httpPort.ifEmpty { serverInfo.serverPortHttp },
             serverPortHttps = httpsPort.ifEmpty { serverInfo.serverPortHttps },
+            // 登录返回 shellSupported 时更新；未返回（如老版本服务端/部分接口）保持原值
+            shellSupported = login.shellSupported ?: serverInfo.shellSupported,
         )
 
         // 登录成功后若服务器返回了最新配对码，更新本地（与 Flutter 端一致：服务器配对码可能已变更）
@@ -302,4 +308,6 @@ data class LoginResponse(
     val pairCode: String? = null,
     val twoFactorRequired: Boolean? = null,
     val tempToken: String? = null,
+    /** 服务端是否支持系统回收站（删除时可选择移入回收站而非永久删除），与 Flutter 一致 */
+    val shellSupported: Boolean? = null,
 )

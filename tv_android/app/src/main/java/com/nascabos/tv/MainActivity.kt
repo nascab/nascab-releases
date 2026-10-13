@@ -122,6 +122,7 @@ class MainActivity : AppCompatActivity(), AppHostActivity {
             last.refreshToken,
             last.accessTokenExpiresAtEpochSec.takeIf { it > 0L },
             last.serverVersion.trim().takeIf { it.isNotEmpty() },
+            last.shellSupported,
         )
 
         val direct = last.serverUrl.trim()

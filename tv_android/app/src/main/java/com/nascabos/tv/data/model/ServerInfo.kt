@@ -27,6 +27,8 @@ data class ServerInfo(
     /** 登录/刷新返回的 expiresIn（Unix 秒） */
     val accessTokenExpiresAtEpochSec: Long = 0L,
     val lastLoginTimeEpochMs: Long = 0L,
+    /** 服务端是否支持系统回收站（登录返回 shellSupported），持久化避免重启后丢失 */
+    val shellSupported: Boolean = false,
 ) {
     val hasPairCode: Boolean get() = pairCode.trim().isNotEmpty()
     val hasDirectUrl: Boolean get() = serverUrl.trim().isNotEmpty()

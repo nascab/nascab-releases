@@ -56,6 +56,8 @@ object ApiController {
     val refreshToken: String get() = state.refreshToken
     /** 服务端版本字符串（登录/刷新返回），与 Flutter ApiController.serverVersion 一致 */
     val serverVersion: String get() = state.serverVersion
+    /** 服务端是否支持系统回收站（登录返回 shellSupported），与 Flutter ApiController.state.shellSupported 一致 */
+    val shellSupported: Boolean get() = state.shellSupported
     val isP2pMode: Boolean get() = baseUrl.trim() == ApiConfig.p2pBaseUrl
     val p2pTransportKind: P2pTransportKind get() = p2pManager?.transportKind ?: P2pTransportKind.Unknown
     val p2pRelayAddress: String get() = p2pManager?.relayAddress ?: ""
@@ -205,6 +207,7 @@ object ApiController {
         refreshToken: String,
         accessTokenExpiresAtEpochSec: Long? = null,
         serverVersion: String? = null,
+        shellSupported: Boolean? = null,
     ) {
         proactiveRefreshJob?.cancel()
         sessionExpiredNotified.set(false)
@@ -227,6 +230,8 @@ object ApiController {
                         serverVersion != null -> serverVersion.trim()
                         else -> state.serverVersion
                     },
+                // 登出清空时一并复位；其余情况显式传入才覆盖
+                shellSupported = if (cleared) false else (shellSupported ?: state.shellSupported),
             )
         restartProactiveJwtRefreshIfNeeded()
     }
@@ -558,6 +563,7 @@ object ApiController {
                 refreshToken = newRefresh,
                 accessTokenExpiresAtEpochSec = lr.expiresIn?.takeIf { it > 0L },
                 serverVersion = if (newServerVersion.isNotEmpty()) newServerVersion else state.serverVersion,
+                shellSupported = lr.shellSupported ?: state.shellSupported,
             )
         sessionExpiredNotified.set(false)
         persistRefreshedTokens(prevAccess, lr)
@@ -581,6 +587,7 @@ object ApiController {
                 refreshToken = lr.refreshToken.orEmpty(),
                 accessTokenExpiresAtEpochSec = exp,
                 serverVersion = if (v.isNotEmpty()) v else last.serverVersion,
+                shellSupported = lr.shellSupported ?: last.shellSupported,
             )
         store.setLastSelected(updated)
         store.upsert(updated)

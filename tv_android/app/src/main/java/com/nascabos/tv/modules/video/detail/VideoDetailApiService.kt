@@ -160,6 +160,7 @@ object VideoDetailApiService {
     suspend fun deleteByPath(
         fullPath: String,
         deleteScrapeFiles: Boolean = true,
+        recycle: Boolean = false,
         timeoutSeconds: Long = 25,
     ): Boolean {
         val p = fullPath.trim()
@@ -169,11 +170,12 @@ object VideoDetailApiService {
                 baseUrl = ApiController.baseUrl,
                 path = "/api/file/delete",
                 body =
-                    mapOf(
-                        "paths" to listOf(p),
-                        "recycle" to false,
-                        "deleteScrapeFiles" to (if (deleteScrapeFiles) 1 else 0),
-                    ),
+                    buildMap {
+                        put("paths", listOf(p))
+                        put("recycle", recycle)
+                        // 仅在勾选时携带，与 Flutter FileApiService.deleteEntries 行为一致
+                        if (deleteScrapeFiles) put("deleteScrapeFiles", true)
+                    },
                 timeoutSeconds = timeoutSeconds,
                 headers = authHeaders(),
             )

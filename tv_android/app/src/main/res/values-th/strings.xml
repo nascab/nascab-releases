@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">ลบ</string>
     <string name="video_detail_delete_message">ลบ “%1$s” หรือไม่?</string>
     <string name="video_detail_delete_failed">ลบไม่สำเร็จ</string>
+    <string name="video_detail_delete_confirm_path">ยืนยันลบหรือไม่ เส้นทาง %1$s</string>
+    <string name="video_detail_delete_with_scrape">ลบไฟล์ nfo โปสเตอร์ ภาพแนวนอนที่เกี่ยวข้องพร้อมกัน</string>
+    <string name="video_detail_delete_recycle">ย้ายไปถังรีไซเคิลระบบ</string>
+    <string name="video_detail_delete_tv_folder_warning">ลบทั้งโฟลเดอร์ รวมถึงตอนทั้งหมดและไฟล์ที่อยู่ข้างใน</string>
     <string name="video_detail_play_failed">เปิดเครื่องเล่นไม่ได้</string>
     <string name="video_detail_scan_queued">เพิ่มการสแกนเข้าคิวแล้ว</string>
     <string name="video_detail_seasons">ฤดูกาล</string>

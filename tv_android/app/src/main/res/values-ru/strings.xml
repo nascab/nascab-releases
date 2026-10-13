@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">Удалить</string>
     <string name="video_detail_delete_message">Удалить «%1$s»?</string>
     <string name="video_detail_delete_failed">Не удалось удалить</string>
+    <string name="video_detail_delete_confirm_path">Удалить этот элемент? Путь: %1$s</string>
+    <string name="video_detail_delete_with_scrape">Также удалить связанные NFO/постеры/фанарты</string>
+    <string name="video_detail_delete_recycle">Поместить в корзину</string>
+    <string name="video_detail_delete_tv_folder_warning">Вся папка будет удалена, включая все серии и находящиеся в ней файлы.</string>
     <string name="video_detail_play_failed">Не удалось открыть плеер</string>
     <string name="video_detail_scan_queued">Сканирование добавлено в очередь</string>
     <string name="video_detail_seasons">Сезоны</string>

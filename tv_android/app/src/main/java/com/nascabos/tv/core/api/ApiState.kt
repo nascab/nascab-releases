@@ -9,4 +9,6 @@ data class ApiState(
     val accessTokenExpiresAtEpochSec: Long? = null,
     /** 服务端版本（登录/刷新接口返回），用于功能门槛判断 */
     val serverVersion: String = "",
+    /** 服务端是否支持系统回收站，决定删除时是否显示“放入回收站”勾选 */
+    val shellSupported: Boolean = false,
 )

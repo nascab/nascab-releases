@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">Excluir</string>
     <string name="video_detail_delete_message">Excluir \"%1$s\"?</string>
     <string name="video_detail_delete_failed">Falha ao excluir</string>
+    <string name="video_detail_delete_confirm_path">Tem certeza de que deseja excluir este item? Caminho: %1$s</string>
+    <string name="video_detail_delete_with_scrape">Excluir também os arquivos NFO/pôsteres/fanart relacionados</string>
+    <string name="video_detail_delete_recycle">Colocar na lixeira</string>
+    <string name="video_detail_delete_tv_folder_warning">A pasta inteira será excluída, incluindo todos os episódios e arquivos contidos nela.</string>
     <string name="video_detail_play_failed">Não é possível abrir o reprodutor</string>
     <string name="video_detail_scan_queued">Escaneamento na fila</string>
     <string name="video_detail_seasons">Temporadas</string>

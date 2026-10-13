@@ -191,17 +191,102 @@ class VideoDetailFragment : DetailsSupportFragment() {
     private fun confirmDelete() {
         val item = viewModel.state.value.data?.item ?: return
         val ctx = activity ?: return
+        val target = resolveDeletePath(item)
+        if (target.isEmpty()) {
+            (activity as? AppHostActivity)?.showError(getString(R.string.video_detail_delete_failed))
+            return
+        }
+        val mt = item.mediaType.trim().lowercase()
+        val isMovieLike = mt == "movie" || mt == "bdmv" || mt == "video_ts"
+        val isFolderDelete = mt == "tv" || mt == "season"
+
+        val density = resources.displayMetrics.density
+        val pad = (24 * density).toInt()
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, 0)
+        }
+        // 待删除路径必须展示给用户确认
+        val pathView =
+            android.widget.TextView(ctx).apply {
+                text = getString(R.string.video_detail_delete_confirm_path, target)
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f)
+            }
+        container.addView(pathView)
+        if (isFolderDelete) {
+            val warningView =
+                android.widget.TextView(ctx).apply {
+                    text = getString(R.string.video_detail_delete_tv_folder_warning)
+                    setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setTextColor(0xFFFFB4A9.toInt())
+                    setPadding(0, (12 * density).toInt(), 0, 0)
+                }
+            container.addView(warningView)
+        }
+        // 电影类才支持同步删除刮削侧车文件（nfo/海报/横版图）；电视剧整夹删除已包含这些文件
+        val scrapeCheckBox =
+            if (isMovieLike) {
+                android.widget.CheckBox(ctx).apply {
+                    isChecked = true
+                    text = getString(R.string.video_detail_delete_with_scrape)
+                    setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setPadding(0, (8 * density).toInt(), 0, 0)
+                    isFocusable = true
+                }
+            } else {
+                null
+            }
+        scrapeCheckBox?.let { container.addView(it) }
+        // 服务端支持系统回收站时才显示，默认勾选（与 Flutter 一致：recycle 默认 = shellSupported）
+        val recycleCheckBox =
+            if (ApiController.shellSupported) {
+                android.widget.CheckBox(ctx).apply {
+                    isChecked = true
+                    text = getString(R.string.video_detail_delete_recycle)
+                    setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setPadding(0, (8 * density).toInt(), 0, 0)
+                    isFocusable = true
+                }
+            } else {
+                null
+            }
+        recycleCheckBox?.let { container.addView(it) }
+        val scrollView =
+            android.widget.ScrollView(ctx).apply {
+                addView(
+                    container,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
+
         androidx.appcompat.app.AlertDialog.Builder(ctx)
             .setTitle(getString(R.string.video_detail_delete_title))
-            .setMessage(getString(R.string.video_detail_delete_message, item.displayTitle))
+            .setView(scrollView)
             .setPositiveButton(getString(R.string.action_delete)) { _, _ ->
-                viewModel.deleteItem { ok ->
+                val deleteScrape = scrapeCheckBox?.isChecked == true
+                val recycle = recycleCheckBox?.isChecked == true
+                viewModel.deleteItem(
+                    target,
+                    deleteScrapeFiles = deleteScrape,
+                    recycle = recycle,
+                ) { ok ->
                     if (!ok) {
                         (activity as? AppHostActivity)?.showError(getString(R.string.video_detail_delete_failed))
                         return@deleteItem
                     }
-                    if (activity is VideoDetailActivity) {
-                        (activity as? VideoDetailActivity)?.finish()
+                    val hostActivity = activity
+                    if (hostActivity is VideoDetailActivity) {
+                        // 回传被删 id，供上一页列表即时移除（服务端索引重扫有延迟，不能依赖重新拉取）
+                        hostActivity.setResult(
+                            android.app.Activity.RESULT_OK,
+                            android.content.Intent().apply {
+                                putExtra(VideoDetailActivity.EXTRA_DELETED_INDEX_ID, item.id)
+                            },
+                        )
+                        hostActivity.finish()
                     } else {
                         activity?.supportFragmentManager?.popBackStack()
                     }
@@ -209,6 +294,47 @@ class VideoDetailFragment : DetailsSupportFragment() {
             }
             .setNegativeButton(getString(R.string.action_cancel), null)
             .show()
+    }
+
+    /**
+     * 删除目标路径，与 Flutter 端详情页 resolveDeletePath 保持一致：
+     * bdmv/video_ts 删光盘结构子目录，电影删视频文件，电视剧/季直接删整个文件夹。
+     */
+    private fun resolveDeletePath(item: VideoDetailItem): String {
+        val fullPath = item.fullPath.trim()
+        val basePath = item.path.trim()
+        val filename = item.filename.trim()
+        val mt = item.mediaType.trim().lowercase()
+        return when (mt) {
+            "bdmv" ->
+                if (fullPath.isNotEmpty()) {
+                    joinRemotePath(fullPath, "BDMV")
+                } else {
+                    joinRemotePath(basePath, filename, "BDMV")
+                }
+            "video_ts" ->
+                if (fullPath.isNotEmpty()) {
+                    joinRemotePath(fullPath, "VIDEO_TS")
+                } else {
+                    joinRemotePath(basePath, filename, "VIDEO_TS")
+                }
+            "movie" ->
+                if (fullPath.isNotEmpty()) {
+                    fullPath
+                } else {
+                    joinRemotePath(basePath, filename)
+                }
+            "tv", "season" -> if (fullPath.isNotEmpty()) fullPath else basePath
+            else -> if (basePath.isNotEmpty()) basePath else fullPath
+        }
+    }
+
+    /** 拼接远端路径：沿用父路径已有的分隔符（Windows 反斜杠或 POSIX 斜杠） */
+    private fun joinRemotePath(vararg parts: String): String {
+        val cleaned = parts.map { it.trim().trimEnd('/', '\\') }.filter { it.isNotEmpty() }
+        if (cleaned.isEmpty()) return ""
+        val sep = if (cleaned.first().contains('\\') && !cleaned.first().contains('/')) "\\" else "/"
+        return cleaned.joinToString(sep)
     }
 
     private fun playEpisode(fullPath: String) {
@@ -334,7 +460,8 @@ class VideoDetailFragment : DetailsSupportFragment() {
             if (detail.item.isFavorite) getString(R.string.video_detail_action_unfavorite) else getString(R.string.video_detail_action_favorite)
         adapter.set(ACTION_FAVORITE.toInt(), androidx.leanback.widget.Action(ACTION_FAVORITE, favTitle))
         adapter.set(ACTION_SCAN.toInt(), androidx.leanback.widget.Action(ACTION_SCAN, getString(R.string.video_detail_action_scan)))
-//        adapter.set(ACTION_DELETE.toInt(), androidx.leanback.widget.Action(ACTION_DELETE, getString(R.string.video_detail_action_delete)))
+        // 删除固定在最右侧
+        adapter.set(ACTION_DELETE.toInt(), androidx.leanback.widget.Action(ACTION_DELETE, getString(R.string.video_detail_action_delete)))
         return adapter
     }
 

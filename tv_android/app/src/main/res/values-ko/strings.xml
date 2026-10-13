@@ -97,6 +97,10 @@
     <string name="video_detail_delete_title">삭제</string>
     <string name="video_detail_delete_message">"%1$s" 삭제하시겠습니까?</string>
     <string name="video_detail_delete_failed">삭제 실패</string>
+    <string name="video_detail_delete_confirm_path">삭제하시겠습니까? 경로: %1$s</string>
+    <string name="video_detail_delete_with_scrape">관련 nfo, 포스터, 팬아트도 삭제</string>
+    <string name="video_detail_delete_recycle">시스템 휴지통으로 이동</string>
+    <string name="video_detail_delete_tv_folder_warning">폴더 전체(모든 에피소드와 포함된 파일)가 삭제됩니다.</string>
     <string name="video_detail_play_failed">플레이어를 열 수 없습니다</string>
     <string name="video_detail_scan_queued">스캔 대기열에 추가됨</string>
     <string name="video_detail_seasons">시즌</string>
