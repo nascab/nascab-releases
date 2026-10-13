@@ -64,6 +64,7 @@ import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
+import org.videolan.libvlc.interfaces.IVLCVout
 import org.videolan.libvlc.util.VLCUtil
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.util.UUID
@@ -176,6 +177,13 @@ class TvVideoPlayerActivity : AppCompatActivity() {
     private var systemSeekResumeRunnable: Runnable? = null
     private var vlcLoadingWatchdogRunnable: Runnable? = null
     private var pendingVlcSeekMs: Long? = null
+    /** VLC 的 video+subtitle 两个 Surface 是否都已创建（字幕 Surface 未就绪时不能开播，否则 vout 会永久缺失字幕能力） */
+    @Volatile
+    private var vlcSurfacesReady: Boolean = false
+    /** 每次 VLC 开播自增，用于作废「等待 Surface 就绪」的旧任务 */
+    private var vlcPlayGeneration: Int = 0
+    /** VLC 字幕轨选择重试任务（内嵌/外挂共用） */
+    private val vlcSpuRetryRunnables = mutableListOf<Runnable>()
 
     private val startContinuousSeekRunnable =
         Runnable {
@@ -581,6 +589,23 @@ class TvVideoPlayerActivity : AppCompatActivity() {
             )
         val lv = LibVLC(this, options)
         val mp = MediaPlayer(lv)
+        vlcSurfacesReady = false
+        // 监听 video+subtitle 两个 Surface 是否都创建完成。字幕 Surface 晚于视频 Surface 创建，
+        // 若在它就绪前就让 VLC 打开 vout，vout 将拿不到字幕 Surface 且整个播放会话都不再具备字幕渲染能力
+        // （表现为播放中选择字幕不显示，只有退出重进播放器才可能恢复）。
+        mp.getVLCVout().addCallback(
+            object : IVLCVout.Callback {
+                override fun onSurfacesCreated(vout: IVLCVout) {
+                    vlcSurfacesReady = true
+                    android.util.Log.d("TvVideoPlayer", "vlc surfaces created (video + subtitle)")
+                }
+
+                override fun onSurfacesDestroyed(vout: IVLCVout) {
+                    vlcSurfacesReady = false
+                    android.util.Log.d("TvVideoPlayer", "vlc surfaces destroyed")
+                }
+            },
+        )
         mp.attachViews(vlcVideoLayout, null, true, false)
         mp.setEventListener { event -> onVlcEvent(event) }
         playerView.player = null
@@ -683,6 +708,9 @@ class TvVideoPlayerActivity : AppCompatActivity() {
         pendingDelayedStopAndPlay = null
         clearSeekRecovery()
         cancelVlcLoadingWatchdog()
+        cancelVlcSpuRetries()
+        vlcPlayGeneration++
+        vlcSurfacesReady = false
         val exo = player
         player = null
         trackSelector = null
@@ -893,6 +921,39 @@ class TvVideoPlayerActivity : AppCompatActivity() {
         internalPath: String,
         startSeconds: Int,
     ) {
+        val generation = ++vlcPlayGeneration
+        cancelVlcSpuRetries()
+        if (vlcSurfacesReady) {
+            startVlcPlayback(proxied, path, internalPath, startSeconds, generation)
+            return
+        }
+        // 字幕 Surface 尚未创建，延迟到双 Surface 就绪后再真正开播；
+        // 超时（极端情况）也兜底开播，避免一直卡在 loading。
+        android.util.Log.d("TvVideoPlayer", "vlc surfaces not ready, defer play start")
+        loading.visibility = View.VISIBLE
+        val waitStartMs = SystemClock.uptimeMillis()
+        val tick =
+            object : Runnable {
+                override fun run() {
+                    if (generation != vlcPlayGeneration || vlcPlayer == null) return
+                    if (vlcSurfacesReady || SystemClock.uptimeMillis() - waitStartMs >= VLC_SURFACES_READY_TIMEOUT_MS) {
+                        startVlcPlayback(proxied, path, internalPath, startSeconds, generation)
+                    } else {
+                        mainHandler.postDelayed(this, VLC_SURFACES_READY_POLL_MS)
+                    }
+                }
+            }
+        mainHandler.postDelayed(tick, VLC_SURFACES_READY_POLL_MS)
+    }
+
+    private fun startVlcPlayback(
+        proxied: String,
+        path: String,
+        internalPath: String,
+        startSeconds: Int,
+        generation: Int,
+    ) {
+        if (generation != vlcPlayGeneration) return
         val lv = libVlc ?: return
         val mp = vlcPlayer ?: return
         runCatching { mp.stop() }
@@ -2076,6 +2137,7 @@ class TvVideoPlayerActivity : AppCompatActivity() {
             val mp = vlcPlayer ?: return
             if (currentSubtitleLabel == noSubtitleLabel) {
                 clearClientSubtitle()
+                cancelVlcSpuRetries()
                 runCatching { mp.spuTrack = -1 }
                 lastExternalSubtitleUrl = null
                 return
@@ -2098,10 +2160,8 @@ class TvVideoPlayerActivity : AppCompatActivity() {
             }
             clearClientSubtitle()
             lastExternalSubtitleUrl = null
-            val subtitleTrackId = resolveVlcSubtitleTrackId(selected.mapIndex)
-            if (subtitleTrackId != null) {
-                runCatching { mp.spuTrack = subtitleTrackId }
-            }
+            // 内嵌字幕：设置后立即校验，失败/未生效则延时重试，最终仍不生效则保位置整源重启兜底
+            applyVlcEmbeddedSubtitleTrack(selected.mapIndex)
             return
         }
         val selector = trackSelector ?: return
@@ -2181,8 +2241,10 @@ class TvVideoPlayerActivity : AppCompatActivity() {
     private fun hotSwapVlcExternalSubtitle(subUrl: String) {
         val mp = vlcPlayer ?: return
         runCatching { mp.spuTrack = -1 }
-        val mrl = VLCUtil.encodeVLCUri(Uri.parse(subUrl))
-        val added = runCatching { mp.addSlave(IMedia.Slave.Type.Subtitle, mrl, true) }.getOrDefault(false)
+        // 必须使用 Uri 重载：addSlave(int, String, boolean) 是「本地文件路径」专用，
+        // 内部会 Uri.fromFile(File(path))，把 http:// 的双斜杠规范化成 /http:/… 导致 VLC 按本地文件打开失败。
+        // Uri 重载内部才会走 VLCUtil.encodeVLCUri 网络 MRL 编码。
+        val added = runCatching { mp.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(subUrl), true) }.getOrDefault(false)
         if (!added) {
             val keep = currentPositionSeconds()
             playCurrent(startSeconds = keep)
@@ -2487,15 +2549,7 @@ class TvVideoPlayerActivity : AppCompatActivity() {
         if (currentSubtitleLabel == no) return
         val selected = subtitleTracks.firstOrNull { it.label == currentSubtitleLabel } ?: return
         if (!selected.isExternal) return
-        val runnable =
-            Runnable {
-                if (!isUsingVlcBackend()) return@Runnable
-                if (currentSubtitleLabel == getString(R.string.player_no_subtitle)) return@Runnable
-                applySelectVlcExternalSidecarSpuTrack()
-            }
-        mainHandler.postDelayed(runnable, 120L)
-        mainHandler.postDelayed(runnable, 450L)
-        mainHandler.postDelayed(runnable, 1200L)
+        scheduleVlcSpuTrackRetry(external = true)
     }
 
     /** 原画外挂：slave 轨常在片内嵌轨之后，单轨时取首条即可 */
@@ -2508,9 +2562,92 @@ class TvVideoPlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun applySelectVlcExternalSidecarSpuTrack() {
-        val id = selectVlcExternalSidecarSpuTrackId() ?: return
-        runCatching { vlcPlayer?.spuTrack = id }
+    /** 立即尝试选中外挂字幕轨，返回是否已确认生效 */
+    private fun applySelectVlcExternalSidecarSpuTrack(): Boolean {
+        val id = selectVlcExternalSidecarSpuTrackId() ?: return false
+        return setVlcSpuTrackAndVerify(id)
+    }
+
+    private fun cancelVlcSpuRetries() {
+        if (vlcSpuRetryRunnables.isEmpty()) return
+        vlcSpuRetryRunnables.forEach { mainHandler.removeCallbacks(it) }
+        vlcSpuRetryRunnables.clear()
+    }
+
+    /**
+     * 原画 VLC 内嵌字幕轨切换：部分设备在播放中第一次 setSpuTrack 会因轨道/ES 尚未就绪而失败，
+     * 设置后读取当前轨校验；未生效则延时重试，最终仍不生效时保位置整源重启兜底（等价于手动退出重进）。
+     */
+    private fun applyVlcEmbeddedSubtitleTrack(mapIndex: Int?) {
+        val tracksDesc =
+            vlcPlayer
+                ?.spuTracks
+                ?.joinToString(prefix = "[", postfix = "]") { "${it.id}:${it.name}" }
+                .orEmpty()
+        val targetId = resolveVlcSubtitleTrackId(mapIndex)
+        android.util.Log.d(
+            "TvVideoPlayer",
+            "vlc select embedded spu: mapIndex=$mapIndex targetId=$targetId tracks=$tracksDesc",
+        )
+        if (targetId != null && setVlcSpuTrackAndVerify(targetId)) return
+        scheduleVlcSpuTrackRetry(external = false)
+    }
+
+    /** 设置 SPU 轨并读取当前轨确认是否生效 */
+    private fun setVlcSpuTrackAndVerify(targetId: Int): Boolean {
+        val mp = vlcPlayer ?: return false
+        val setOk = runCatching { mp.setSpuTrack(targetId) }.getOrDefault(false)
+        val current = runCatching { mp.spuTrack }.getOrDefault(Int.MIN_VALUE)
+        val matched = current == targetId
+        android.util.Log.d(
+            "TvVideoPlayer",
+            "vlc setSpuTrack: target=$targetId setOk=$setOk current=$current matched=$matched",
+        )
+        return setOk && matched
+    }
+
+    /**
+     * VLC 字幕轨选择统一重试：external=true 按外挂轨规则解析 id（单轨取首条/多轨取末条），
+     * 否则按当前内嵌字幕的 mapIndex 解析。最后一轮仍不生效则保位置整源重启兜底。
+     */
+    private fun scheduleVlcSpuTrackRetry(external: Boolean) {
+        cancelVlcSpuRetries()
+        val noSubtitleLabel = getString(R.string.player_no_subtitle)
+        VLC_SPU_RETRY_DELAYS_MS.forEachIndexed { attempt, delay ->
+            val runnable =
+                Runnable {
+                    if (!isUsingVlcBackend() || currentQuality != QUALITY_ORIGINAL) return@Runnable
+                    if (currentSubtitleLabel == noSubtitleLabel) return@Runnable
+                    if (vlcPlayer == null) return@Runnable
+                    val sel =
+                        subtitleTracks.firstOrNull { it.label == currentSubtitleLabel }
+                            ?: return@Runnable
+                    if (sel.isExternal != external) return@Runnable
+                    val targetId =
+                        if (external) {
+                            selectVlcExternalSidecarSpuTrackId()
+                        } else {
+                            resolveVlcSubtitleTrackId(sel.mapIndex)
+                        }
+                    if (targetId != null && setVlcSpuTrackAndVerify(targetId)) {
+                        cancelVlcSpuRetries()
+                        return@Runnable
+                    }
+                    // 仅当轨道已出现在 VLC 列表中却始终无法选中时才整源重启；
+                    // 轨道一直没出现（VLC 未识别）时重启也无意义，避免无谓的起播重启。
+                    if (attempt == VLC_SPU_RETRY_DELAYS_MS.lastIndex && targetId != null) {
+                        android.util.Log.w(
+                            "TvVideoPlayer",
+                            "vlc spu track still ineffective after ${VLC_SPU_RETRY_DELAYS_MS.last()}ms, " +
+                                "restart playback at current position as fallback (external=$external, target=$targetId)",
+                        )
+                        val keep = currentPositionSeconds()
+                        playCurrent(startSeconds = keep)
+                    }
+                }
+            vlcSpuRetryRunnables.add(runnable)
+            mainHandler.postDelayed(runnable, delay)
+        }
     }
 
     private fun onPlayerStateChanged(playbackState: Int) {
@@ -3029,6 +3166,11 @@ class TvVideoPlayerActivity : AppCompatActivity() {
         private const val RESUME_DIALOG_SHOW_DELAY_MS = 600L
         /** 「继续播放」提示对话框无操作时自动消失时间（毫秒） */
         private const val RESUME_DIALOG_AUTO_DISMISS_MS = 5000L
+        /** VLC 开播前等待字幕 Surface 就绪的轮询间隔与最长等待时间（毫秒） */
+        private const val VLC_SURFACES_READY_POLL_MS = 16L
+        private const val VLC_SURFACES_READY_TIMEOUT_MS = 2000L
+        /** VLC 运行时切换字幕轨后，校验未生效时的重试延时（毫秒） */
+        private val VLC_SPU_RETRY_DELAYS_MS = longArrayOf(120L, 450L, 1200L)
         /** seek 后若持续 buffering，则自动补一次恢复 seek/重建播放 */
         private const val SEEK_BUFFERING_RECOVERY_TIMEOUT_MS = 2500L
         /** 系统内核 seek 后若停在已就绪但未播放，延迟补一次 play() */
