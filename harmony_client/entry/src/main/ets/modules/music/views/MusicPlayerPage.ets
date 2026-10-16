@@ -14,7 +14,7 @@ import { ApiUrls } from '../../../core/network/ApiUrls';
 import { AppImage } from '../../../common/components/AppImage';
 import { MusicPlayService, MusicLoopMode, LyricLine } from '../service/MusicPlayService';
 import { MusicLoopModes } from '../models/MusicModels';
-import { MusicListItem } from '../models/MusicModels';
+import { MusicListItem, LyricSearchItem } from '../models/MusicModels';
 import { MusicDiscWithNeedle } from '../components/MusicDiscWithNeedle';
 import { MusicDiscCover } from '../components/MusicDiscCover';
 import { MusicLyricsView } from '../components/MusicLyricsView';
@@ -184,22 +184,6 @@ class LyricSearchDialogParams extends DialogParamsBase {
   };
 }
 
-class LyricSearchRowItem {
-  id: string = '';
-  title: string = '';
-  album: string = '';
-  artist: string = '';
-  durationMs: number = 0;
-  lrc: string = '';
-}
-
-class LyricSearchDialogState {
-  keyword: string = '';
-  loading: boolean = false;
-  selectingId: string = '';
-  results: LyricSearchRowItem[] = [];
-}
-
 @Builder
 function musicLyricSearchDialogBuilder(params: LyricSearchDialogParams) {
   MusicLyricSearchDialogContent({ params: params })
@@ -208,11 +192,13 @@ function musicLyricSearchDialogBuilder(params: LyricSearchDialogParams) {
 @ComponentV2
 struct MusicLyricSearchDialogContent {
   @Param params: LyricSearchDialogParams = new LyricSearchDialogParams();
-  @Local state: LyricSearchDialogState = new LyricSearchDialogState();
-  private autoSearched: boolean = false;
+  @Local keyword: string = '';
+  @Local loading: boolean = false;
+  @Local selectingId: string = '';
+  @Local results: LyricSearchItem[] = [];
 
   aboutToAppear(): void {
-    this.state.keyword = `${this.params.title} ${this.params.artist}`.trim();
+    this.keyword = `${this.params.title} ${this.params.artist}`.trim();
     // 自动搜索（对齐 didAutoSearch postFrameCallback）
     setTimeout((): void => {
       this.doSearch();
@@ -220,19 +206,19 @@ struct MusicLyricSearchDialogContent {
   }
 
   private async doSearch(): Promise<void> {
-    const q = this.state.keyword.trim();
+    const q = this.keyword.trim();
     if (q.length === 0) {
       ToastUtil.show(L10n.t('input_please'));
       return;
     }
-    this.state.loading = true;
-    this.state.results = [];
+    this.loading = true;
+    this.results = [];
     try {
-      this.state.results = await MusicListApiService.searchLyric(q);
+      this.results = await MusicListApiService.searchLyric(q);
     } catch (_e) {
-      this.state.results = [];
+      this.results = [];
     } finally {
-      this.state.loading = false;
+      this.loading = false;
     }
   }
 
@@ -278,13 +264,13 @@ struct MusicLyricSearchDialogContent {
     return `${`${m}`.padStart(2, '0')}:${`${s}`.padStart(2, '0')}`;
   }
 
-  private async applyItem(item: LyricSearchRowItem): Promise<void> {
+  private async applyItem(item: LyricSearchItem): Promise<void> {
     const lrc = item.lrc.trim();
     if (lrc.length === 0) {
       ToastUtil.show(L10n.operationFailed);
       return;
     }
-    this.state.selectingId = item.id;
+    this.selectingId = item.id;
     try {
       const ok = await MusicListApiService.setLyric(this.params.musicPath, lrc);
       if (!ok) {
@@ -295,7 +281,7 @@ struct MusicLyricSearchDialogContent {
       ToastUtil.show(L10n.t('operation_success'));
       this.params.onResult(undefined);
     } finally {
-      this.state.selectingId = '';
+      this.selectingId = '';
     }
   }
 
@@ -319,11 +305,11 @@ struct MusicLyricSearchDialogContent {
       .padding({ bottom: 10 })
 
       Row({ space: 8 }) {
-        TextInput({ text: this.state.keyword, placeholder: L10n.t('search') })
+        TextInput({ text: this.keyword, placeholder: L10n.t('search') })
           .fontSize(14)
           .layoutWeight(1)
           .onChange((v: string) => {
-            this.state.keyword = v;
+            this.keyword = v;
           })
           .onSubmit((): void => {
             void this.doSearch();
@@ -338,7 +324,7 @@ struct MusicLyricSearchDialogContent {
       }
       .width('100%')
 
-      if (this.state.loading) {
+      if (this.loading) {
         Column() {
           LoadingProgress()
             .width(26)
@@ -348,7 +334,7 @@ struct MusicLyricSearchDialogContent {
         .width('100%')
         .height(120)
         .justifyContent(FlexAlign.Center)
-      } else if (this.state.results.length === 0) {
+      } else if (this.results.length === 0) {
         Column() {
           Text(L10n.t('no_data'))
             .fontSize(14)
@@ -359,7 +345,7 @@ struct MusicLyricSearchDialogContent {
         .justifyContent(FlexAlign.Center)
       } else {
         List({ space: 0 }) {
-          ForEach(this.state.results, (item: LyricSearchRowItem) => {
+          ForEach(this.results, (item: LyricSearchItem) => {
             ListItem() {
               Column() {
                 Row({ space: 8 }) {
@@ -396,7 +382,7 @@ struct MusicLyricSearchDialogContent {
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .layoutWeight(1)
-                  Text(this.state.selectingId === item.id ? '' : L10n.t('select'))
+                  Text(this.selectingId === item.id ? '' : L10n.t('select'))
                     .fontSize(14)
                     .fontColor(AppTheme.current().primary)
                     .padding({ left: 14, right: 14, top: 6, bottom: 6 })
@@ -412,7 +398,7 @@ struct MusicLyricSearchDialogContent {
               .padding({ top: 8, bottom: 8 })
               .border({ width: { bottom: 0.5 }, color: AppTheme.current().divider })
             }
-          }, (item: LyricSearchRowItem) => item.id)
+          }, (item: LyricSearchItem) => item.id)
         }
         .width('100%')
         .height(360)
@@ -421,13 +407,15 @@ struct MusicLyricSearchDialogContent {
     }
     .width('100%')
     .padding(16)
+    .backgroundColor(AppTheme.current().surfaceBg)
+    .borderRadius(24)
   }
 
   private trackDurationMs(): number {
     return MusicPlayService.getInstance().durationMs;
   }
 
-  private isHighMatch(item: LyricSearchRowItem): boolean {
+  private isHighMatch(item: LyricSearchItem): boolean {
     const durationMatch = item.durationMs > 0 &&
       Math.abs(item.durationMs - this.trackDurationMs()) <= 5000;
     if (!durationMatch) {
@@ -438,7 +426,7 @@ struct MusicLyricSearchDialogContent {
     return titleNorm.length > 0 && fileStemNorm.length > 0 && fileStemNorm.includes(titleNorm);
   }
 
-  private metaLine(item: LyricSearchRowItem): string {
+  private metaLine(item: LyricSearchItem): string {
     const parts: string[] = [];
     if (item.artist.trim().length > 0) {
       parts.push(item.artist.trim());
