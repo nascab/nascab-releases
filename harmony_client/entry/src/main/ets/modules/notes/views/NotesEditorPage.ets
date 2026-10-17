@@ -23,7 +23,7 @@ import { NotesFileUtils } from '../services/NotesFileUtils';
 import { NotesEditorPageParam } from '../router/NotesRoutes';
 
 const TAG = 'NotesEditorPage';
-/** 编辑器本地拦截域：主框架 URL 指向该域，onInterceptRequest 映射到 rawfile/notes_editor */
+/** 编辑器本地拦截域：主框架 URL 指向该域，onInterceptRequest 映射到 rawfile/notes_editor（对齐 TerminalPage） */
 const EDITOR_ORIGIN = 'http://nascab.notes';
 const RAW_BASE = 'notes_editor/';
 
@@ -70,6 +70,9 @@ function showNotesZoomViewer(url: string): void {
 
 /** JS → 原生回调集合（javaScriptProxy 注册对象；方法名与 index.html 协议一致） */
 class NotesWebProxy {
+  /** 心跳：inline script 最开头调用，确认脚本本身开始执行（Quill 初始化前） */
+  onScriptStart: () => void = (): void => {
+  };
   onEditorReady: () => void = (): void => {
   };
   onDeltaChanged: (patchJson: string) => void = (_patchJson: string): void => {
@@ -166,6 +169,16 @@ class NotesWebBridge implements NotesEditorBridge {
   runSetTheme(darkFlag: string, primaryColor: string): void {
     this.run(`window.__notes.setTheme(${JSON.stringify(darkFlag)}, ${JSON.stringify(primaryColor)})`);
   }
+
+  /** 占位符（需在 Quill 初始化后设置 data-placeholder） */
+  runSetPlaceholder(text: string): void {
+    this.run(`window.__notes.setPlaceholder(${JSON.stringify(text)})`);
+  }
+
+  /** 工具栏 more 面板本地化文案 */
+  runSetLabels(labels: Record<string, string>): void {
+    this.run(`window.__notes.setLabels(${JSON.stringify(labels)})`);
+  }
 }
 
 /** 从 style 串解析 width/height px 值（无则 0） */
@@ -213,10 +226,15 @@ export struct NotesEditorPage {
   };
 
   aboutToAppear(): void {
+    hilog.error(0x0000, TAG, 'aboutToAppear: startUrl will be built');
     this.bridge = new NotesWebBridge(this.webController);
+    this.proxy.onScriptStart = (): void => {
+      hilog.error(0x0000, TAG, 'SCRIPT HEARTBEAT: inline script started executing (before Quill)');
+    };
     this.proxy.onEditorReady = (): void => {
+      hilog.error(0x0000, TAG, 'JS bridge ready: editor scripts executed');
       this.ctrl.setEditorBridge(this.bridge);
-      this.pushThemeToWeb();
+      this.pushInitParamsToWeb();
     };
     this.proxy.onDeltaChanged = (_patchJson: string): void => {
       // pending 由 JS 侧累积、保存时 takePending 原子取走；此处仅触发保存调度
@@ -235,7 +253,7 @@ export struct NotesEditorPage {
     this.buildStartUrl();
   }
 
-  /** 组装编辑器 URL（主题/占位符/更多面板文案以查询参数传入 Web） */
+  /** 组装编辑器 URL（主题/占位符/更多面板文案以查询参数传入 Web；onPageEnd 再注入一次兜底） */
   private buildStartUrl(): void {
     const p = AppTheme.current();
     const qp = new Map<string, string>();
@@ -256,6 +274,28 @@ export struct NotesEditorPage {
       pairs.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
     });
     this.startUrl = `${EDITOR_ORIGIN}/index.html?${pairs.join('&')}`;
+    hilog.error(0x0000, TAG, 'startUrl set: %{public}s', this.startUrl);
+  }
+
+  /** 将主题/占位符/工具栏文案一次性注入 Web（onPageEnd 后调用，确保 Quill 已初始化） */
+  private pushInitParamsToWeb(): void {
+    if (this.bridge === undefined) {
+      return;
+    }
+    const p = AppTheme.current();
+    this.bridge.runSetTheme(AppTheme.isDark() ? '1' : '0', p.primary);
+    this.bridge.runSetPlaceholder(L10n.t('notes_editor_placeholder'));
+    this.bridge.runSetLabels({
+      'undo': L10n.t('notes_toolbar_undo'),
+      'redo': L10n.t('notes_toolbar_redo'),
+      'clear': L10n.t('notes_toolbar_clear'),
+      'quote': L10n.t('notes_toolbar_quote'),
+      'code': L10n.t('notes_toolbar_code'),
+      'bullet': L10n.t('notes_toolbar_list_bullet'),
+      'number': L10n.t('notes_toolbar_list_number'),
+      'check': L10n.t('notes_toolbar_list_check'),
+      'image': L10n.t('file_type_image')
+    });
   }
 
   aboutToDisappear(): void {
@@ -462,43 +502,47 @@ export struct NotesEditorPage {
   /** 顶栏（对齐 Flutter AppBar：标题 + 保存中 spinner + 菜单） */
   @Builder
   Header() {
-    Row() {
-      BorderedIconButton({
-        icon: $r('sys.symbol.arrow_left'),
-        strokeColor: AppTheme.withAlpha(this.palette().appBarFg, 0.35),
-        iconColor: this.palette().appBarFg,
-        onTap: (): void => {
-          void this.flushAndPop();
+    Column() {
+      Row() {
+        BorderedIconButton({
+          icon: $r('sys.symbol.arrow_left'),
+          strokeColor: AppTheme.withAlpha(this.palette().appBarFg, 0.35),
+          iconColor: this.palette().appBarFg,
+          onTap: (): void => {
+            void this.flushAndPop();
+          }
+        })
+        Text(this.ctrl.currentNote !== undefined
+          ? displayNotesTitle(this.ctrl.currentNote.title) : L10n.t('app_note', '笔记'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.palette().appBarFg)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+          .margin({ left: 10, right: 10 })
+        if (this.ctrl.savingNote) {
+          LoadingProgress()
+            .width(18)
+            .height(18)
+            .color(this.palette().appBarFg)
+            .margin({ right: 12 })
         }
-      })
-      Text(this.ctrl.currentNote !== undefined
-        ? displayNotesTitle(this.ctrl.currentNote.title) : L10n.t('app_note', '笔记'))
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.palette().appBarFg)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-        .margin({ left: 10, right: 10 })
-      if (this.ctrl.savingNote) {
-        LoadingProgress()
-          .width(18)
-          .height(18)
-          .color(this.palette().appBarFg)
-          .margin({ right: 12 })
+        if (this.ctrl.currentNote !== undefined) {
+          SymbolGlyph($r('sys.symbol.ellipsis_circle'))
+            .fontSize(20)
+            .fontColor([this.palette().appBarFg])
+            .padding(8)
+            .onClick((): void => {
+              void this.showEditorMenu();
+            })
+        }
       }
-      if (this.ctrl.currentNote !== undefined) {
-        SymbolGlyph($r('sys.symbol.ellipsis_circle'))
-          .fontSize(20)
-          .fontColor([this.palette().appBarFg])
-          .onClick((): void => {
-            void this.showEditorMenu();
-          })
-      }
+      .width('100%')
+      .height(56)
+      .padding({ left: 10, right: 12 })
     }
     .width('100%')
-    .height(56)
-    .padding({ left: 10, right: 12 })
     .padding({ top: this.statusBarHeight })
     .backgroundColor(this.palette().appBarBg)
   }
@@ -520,7 +564,7 @@ export struct NotesEditorPage {
       .justifyContent(FlexAlign.Center)
     } else {
       Column() {
-        this.TitleBar(this.ctrl.currentNote)
+        this.TitleBar()
         if (this.ctrl.showSaveFailureWarning) {
           this.SaveFailureWarning()
         }
@@ -540,7 +584,7 @@ export struct NotesEditorPage {
 
   /** 标题行（对齐 pane 顶部标题输入 + 置顶按钮） */
   @Builder
-  TitleBar(note: NotesNote) {
+  TitleBar() {
     Row() {
       TextInput({
         text: this.ctrl.titleText,
@@ -552,6 +596,7 @@ export struct NotesEditorPage {
         .placeholderColor(AppTheme.withAlpha(this.palette().onSurface, 0.3))
         .placeholderFont({ size: 26, weight: FontWeight.Bold })
         .backgroundColor(Color.Transparent)
+        .borderRadius(0)
         .border({ width: { bottom: 1 }, color: { bottom: this.palette().divider } })
         .padding({ bottom: 8 })
         .height(52)
@@ -560,14 +605,21 @@ export struct NotesEditorPage {
           this.ctrl.titleText = v;
           this.ctrl.onEditorChanged();
         })
-      if (!this.ctrl.showingTrash) {
-        SymbolGlyph($r('sys.symbol.pin_fill'))
-          .fontSize(18)
-          .fontColor([note.isPinned ? this.palette().primary : this.palette().hint])
-          .padding(8)
-          .onClick((): void => {
-            void this.ctrl.togglePinned(note);
-          })
+      if (!this.ctrl.showingTrash && this.ctrl.currentNote !== undefined) {
+        Button() {
+          SymbolGlyph(this.ctrl.currentNote.isPinned ? $r('sys.symbol.pin_fill') : $r('sys.symbol.pin'))
+            .fontSize(18)
+            .fontColor([this.ctrl.currentNote.isPinned ? this.palette().primary : this.palette().subText])
+        }
+        .width(40)
+        .height(40)
+        .backgroundColor(Color.Transparent)
+        .borderRadius(20)
+        .onClick((): void => {
+          hilog.error(0x0000, TAG, 'pin button clicked, current pinned=%{public}s',
+            `${this.ctrl.currentNote!.isPinned}`);
+          void this.ctrl.togglePinned(this.ctrl.currentNote!);
+        })
       }
     }
     .width('100%')
@@ -580,7 +632,7 @@ export struct NotesEditorPage {
   SaveFailureWarning() {
     Column() {
       Row() {
-        SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+        SymbolGlyph($r('sys.symbol.wifi_slash'))
           .fontSize(18)
           .fontColor([this.palette().error])
         Text(L10n.t('notes_save_connection_lost'))
@@ -631,16 +683,34 @@ export struct NotesEditorPage {
       .onInterceptRequest((event: OnInterceptRequestEvent): WebResourceResponse | null => {
         return this.interceptRequest(event);
       })
+      .onPageBegin((_e: OnPageBeginEvent): void => {
+        hilog.error(0x0000, TAG, 'web page begin: %{public}s', this.startUrl);
+      })
+      .onPageEnd((_e: OnPageEndEvent): void => {
+        hilog.error(0x0000, TAG, 'web page end: injecting init params');
+        this.pushInitParamsToWeb();
+      })
+      .onConsole((event: OnConsoleEvent): boolean => {
+        const m = event.message;
+        hilog.error(0x0000, TAG, 'web console[L%{public}d] %{public}s:%{public}d %{public}s',
+          m.getMessageLevel(), m.getSourceId(), m.getLineNumber(), m.getMessage());
+        return false;
+      })
+      .onErrorReceive((event: OnErrorReceiveEvent): void => {
+        hilog.error(0x0000, TAG, 'web error main=%{public}s: %{public}s',
+          `${event.request.isMainFrame()}`,
+          `${event.error.getErrorCode()} ${event.error.getErrorInfo()}`);
+      })
       .javaScriptProxy({
         object: this.proxy,
         name: 'NativeBridge',
-        methodList: ['onEditorReady', 'onDeltaChanged', 'onImageClicked', 'onPickImage'],
+        methodList: ['onScriptStart', 'onEditorReady', 'onDeltaChanged', 'onImageClicked', 'onPickImage'],
         controller: this.webController
       })
   }
 
   /**
-   * 本地资源拦截：http://nascab.notes/<rest> → rawfile/notes_editor/<rest>；
+   * 本地资源拦截：http://nascab.notes/<rest> → rawfile/notes_editor/<rest>（对齐 TerminalPage）；
    * 其余（服务器图片等）放行走网络。
    */
   private interceptRequest(event: OnInterceptRequestEvent): WebResourceResponse | null {
@@ -655,8 +725,10 @@ export struct NotesEditorPage {
     }
     let rest = path === '/' || path === '' ? 'index.html' : path.substring(1);
     if (rest.length === 0 || rest.includes('..')) {
+      hilog.warn(0x0000, TAG, 'intercept reject: %{public}s', url);
       return null;
     }
+    hilog.error(0x0000, TAG, 'intercept serve: %{public}s', url);
     const resp = new WebResourceResponse();
     resp.setResponseData($rawfile(RAW_BASE + rest));
     resp.setResponseMimeType(mimeOf(rest));
