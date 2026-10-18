@@ -235,8 +235,8 @@ struct EncryptedSpaceCard {
   }
 
   build() {
-    Column() {
-      // 预览区（对齐 gradient preview + lock icon）
+    Stack({ alignContent: Alignment.Bottom }) {
+      // 预览区（填充整个卡片，对齐 Flutter CustomAlbum 的 preview）
       Stack() {
         Column()
           .width('100%')
@@ -250,9 +250,9 @@ struct EncryptedSpaceCard {
           .fontColor(['#FFFFFF'])
       }
       .width('100%')
-      .layoutWeight(1)
+      .height('100%')
 
-      // 底部标题行（对齐 headerPosition bottom）
+      // 底部标题行（覆盖在预览上，半透渐变，对齐 Flutter CustomAlbum headerPosition bottom）
       Row({ space: 6 }) {
         Text(this.item.displayTitle())
           .fontSize(14)
@@ -279,7 +279,10 @@ struct EncryptedSpaceCard {
       .width('100%')
       .height(44)
       .padding({ left: 12, right: 8 })
-      .backgroundColor('#33000000')
+      .linearGradient({
+        angle: 0,
+        colors: [[AppTheme.withAlpha('#000000', 0.55), 0], ['#00000000', 1]]
+      })
     }
     .width('100%')
     .height(176)

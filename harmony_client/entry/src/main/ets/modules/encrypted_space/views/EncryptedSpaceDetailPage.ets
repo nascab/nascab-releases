@@ -26,6 +26,88 @@ import { AppRouter } from '../../../router/AppRouter';
 /** 文件卡片高度与列宽（对齐 Flutter cellHeight 208 / desiredWidth 140） */
 const FILE_CELL_HEIGHT = 208;
 const FILE_DESIRED_WIDTH = 140;
+/** 文件网格左右内边距（列表两侧留白固定 8） */
+const FILE_GRID_SIDE_PADDING = 8;
+
+/**
+ * 文件网格懒加载数据源：Grid 用 ForEach 会一次性构建全部卡片及其缩略图 AppImage，
+ * 200/400+ 项时并发发起同等数量的 tiny 解码请求；LazyForEach 仅构建可见行 + cachedCount。
+ * 数据更新仅使用 onDatasetChange（同一 listener 不可混用其他 DataChangeListener 接口，否则运行时 401）。
+ */
+class EncryptedFilesDataSource implements IDataSource {
+  private items: EncryptedFileItem[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  /** 用控制器当前列表同步：尾部追加走增量 ADD（保持滚动位置与已加载缩略图），其余整体替换 */
+  sync(files: EncryptedFileItem[]): void {
+    const next: EncryptedFileItem[] = files.slice();
+    if (this.isSame(this.items, next)) {
+      return;
+    }
+    const ops: DataOperation[] = [];
+    let appended = this.items.length > 0 && next.length > this.items.length;
+    if (appended) {
+      for (let i = 0; i < this.items.length; i++) {
+        if (this.items[i] !== next[i]) {
+          appended = false;
+          break;
+        }
+      }
+    }
+    if (appended) {
+      ops.push({
+        type: DataOperationType.ADD, index: this.items.length,
+        count: next.length - this.items.length
+      });
+    } else {
+      if (this.items.length > 0) {
+        ops.push({ type: DataOperationType.DELETE, index: 0, count: this.items.length });
+      }
+      if (next.length > 0) {
+        ops.push({ type: DataOperationType.ADD, index: 0, count: next.length });
+      }
+    }
+    this.items = next;
+    if (ops.length > 0) {
+      for (const l of this.listeners) {
+        l.onDatasetChange(ops);
+      }
+    }
+  }
+
+  private isSame(a: EncryptedFileItem[], b: EncryptedFileItem[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  totalCount(): number {
+    return this.items.length;
+  }
+
+  getData(index: number): EncryptedFileItem {
+    return this.items[index];
+  }
+
+  registerDataChangeListener(l: DataChangeListener): void {
+    if (this.listeners.indexOf(l) < 0) {
+      this.listeners.push(l);
+    }
+  }
+
+  unregisterDataChangeListener(l: DataChangeListener): void {
+    const idx = this.listeners.indexOf(l);
+    if (idx >= 0) {
+      this.listeners.splice(idx, 1);
+    }
+  }
+}
 
 /**
  * 加密空间详情页（对齐 Flutter AppEncryptedSpaceDetailPage）：
@@ -43,6 +125,8 @@ export struct EncryptedSpaceDetailPage {
   @Local themeTick: number = 0;
   @Local viewWidth: number = 0;
   @Local refreshing: boolean = false;
+  /** 网格懒加载数据源（仅构建可见项 + cachedCount 邻行） */
+  private fileDs: EncryptedFilesDataSource = new EncryptedFilesDataSource();
   private themeListener: (data: string) => void = (_data: string): void => {
     this.themeTick++;
   };
@@ -82,7 +166,7 @@ export struct EncryptedSpaceDetailPage {
   }
 
   private gridColumnCount(): number {
-    const width = this.viewWidth - 24;
+    const width = this.viewWidth - FILE_GRID_SIDE_PADDING * 2;
     if (width <= 0) {
       return 2;
     }
@@ -108,6 +192,12 @@ export struct EncryptedSpaceDetailPage {
     } finally {
       this.refreshing = false;
     }
+  }
+
+  /** ctrl.files 变化 → 同步懒加载数据源（loadMore 尾部追加走增量 ADD，保持不变滚动位置） */
+  @Monitor('ctrl.files')
+  onFilesChanged(): void {
+    this.fileDs.sync(this.ctrl.files);
   }
 
   /** ctrl.viewerVersion 变化 → 打开图片查看器（对齐 Flutter Get.to CustomGallery） */
@@ -210,7 +300,7 @@ export struct EncryptedSpaceDetailPage {
           })
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 8 })
+        .padding({ left: FILE_GRID_SIDE_PADDING, right: FILE_GRID_SIDE_PADDING, top: 8 })
 
         this.FileBody()
       }
@@ -251,7 +341,7 @@ export struct EncryptedSpaceDetailPage {
       } else {
         Refresh({ refreshing: this.refreshing }) {
           Grid() {
-            ForEach(this.ctrl.files, (item: EncryptedFileItem, idx: number) => {
+            LazyForEach(this.fileDs, (item: EncryptedFileItem) => {
               GridItem() {
                 EncryptedFileCard({
                   item: item,
@@ -259,12 +349,14 @@ export struct EncryptedSpaceDetailPage {
                   themeTick: this.themeTick
                 })
               }
-            }, (item: EncryptedFileItem, idx: number) => `${item.indexId}_${idx}`)
+            }, (item: EncryptedFileItem): string => `${item.indexId}`)
           }
           .columnsTemplate(this.columnsTemplate())
           .columnsGap(12)
           .rowsGap(12)
-          .padding(12)
+          // 仅预构建可见项 + 相邻 2 行，避免一次性构建全部卡片与缩略图请求
+          .cachedCount(2)
+          .padding({ left: FILE_GRID_SIDE_PADDING, right: FILE_GRID_SIDE_PADDING, top: 12, bottom: 12 })
           .width('100%')
           .height('100%')
           .onAreaChange((_o: Area, n: Area) => {

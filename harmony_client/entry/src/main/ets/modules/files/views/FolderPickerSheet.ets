@@ -1,5 +1,6 @@
 import { L10n } from '../../../core/localization/L10n';
 import { AppTheme } from '../../../core/theme/AppTheme';
+import { DialogUtil } from '../../../common/DialogUtil';
 import { SheetHandle, SheetParamsBase, SheetUtil } from '../../../common/SheetUtil';
 import { CircleCheckbox } from '../../../common/components/CircleCheckbox';
 import { FileController } from '../controllers/FileController';
@@ -77,11 +78,55 @@ struct FolderPickerSheetInner {
     this.loading = false;
   }
 
+  /** 新建文件夹（对齐 Flutter FolderPickerFileSystemTab 的 create_new_folder 按钮） */
+  private async createFolder(): Promise<void> {
+    const supported = await this.ctrl.ensureCreateFolderSupported();
+    if (!supported) {
+      return;
+    }
+    const entered = await DialogUtil.showInputDialog(
+      L10n.t('folder_new_dir', '新建文件夹'),
+      L10n.t('enter_new_name', '请输入新名称'),
+      '', '', '',
+      (value: string): string | undefined => {
+        return value.trim().length === 0 ? L10n.t('name_cannot_be_empty', '名称不能为空') : undefined;
+      });
+    if (typeof entered !== 'string' || entered.trim().length === 0) {
+      return;
+    }
+    const name = entered.trim();
+    const created = await this.ctrl.createFolder(name);
+    if (!created) {
+      return;
+    }
+    const base = this.ctrl.currentPath;
+    const newPath = base.length === 0 ? name : `${base}${this.ctrl.sep}${name}`;
+    // 对齐 Flutter：创建成功后可确认直接选择新文件夹并关闭弹层
+    const params = new Map<string, string>();
+    params.set('name', name);
+    const confirmed = await DialogUtil.showConfirmDialog(
+      L10n.t('folder_picker_confirm', '确认'),
+      L10n.t('folder_picker_confirm_select_new_folder', '是否选择新创建的文件夹：@name？', params),
+      undefined,
+      L10n.t('yes', '是'),
+      L10n.t('no', '否'));
+    if (confirmed === true) {
+      this.p.close();
+      this.p.onPicked([newPath]);
+    }
+  }
+
   build() {
     Column() {
       SheetHandle()
-      // 顶部：返回上级 + 当前路径
+      // 顶部：新建文件夹 + 返回上级 + 当前路径
       Row({ space: 8 }) {
+        SymbolGlyph($r('sys.symbol.folder_badge_plus'))
+          .fontSize(20)
+          .fontColor([AppTheme.current().onSurface])
+          .onClick((): void => {
+            void this.createFolder();
+          })
         SymbolGlyph($r('sys.symbol.arrow_left'))
           .fontSize(20)
           .fontColor([AppTheme.current().onSurface])
