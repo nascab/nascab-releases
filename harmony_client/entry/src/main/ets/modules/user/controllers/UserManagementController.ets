@@ -134,8 +134,10 @@ export class UserManagementController {
       // 用户列表可能已更新，清理权限缓存（对齐 fetchUsers 内缓存清理）
       this.permissionsMap = new Map<number, PermissionGroup[]>();
       if (this.users.length > 0) {
-        const firstId = this.users[0].id;
-        this.selectUser(firstId);
+        // 保留当前选中用户（若仍在列表中），避免编辑/刷新后被强制跳回列表首个用户
+        const keepSelection = this.users.some((u: UserProfile): boolean => u.id === this.selectedId);
+        const targetId = keepSelection ? this.selectedId : this.users[0].id;
+        this.selectUser(targetId);
       } else {
         this.selectedId = -1;
         this.onSelectedChanged();

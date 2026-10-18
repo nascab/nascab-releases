@@ -21,10 +21,12 @@ export struct UserInfoCard {
     return AppTheme.current();
   }
 
-  /** 编辑（对齐 onPressed：打开表单弹窗，成功后刷新列表） */
+  /** 编辑（对齐 onPressed：打开表单弹窗，成功后刷新列表；取消不刷新） */
   private editUser(): void {
-    openUserFormDialog(this.user, (): void => {
-      void this.ctrl.fetchUsers();
+    openUserFormDialog(this.user, (ok: boolean): void => {
+      if (ok) {
+        void this.ctrl.fetchUsers();
+      }
     });
   }
 

@@ -21,6 +21,12 @@ export struct TwofaTab {
     void this.ctrl.loadTwofaStatus(this.uid);
   }
 
+  /** uid 变化时重新拉取（对齐 Flutter build 内 `if (!containsKey) getTwofaStatus(uid)` 的懒加载） */
+  @Monitor('uid')
+  onUidChange(): void {
+    void this.ctrl.loadTwofaStatus(this.uid);
+  }
+
   private palette(): ThemePalette {
     return AppTheme.current();
   }
@@ -73,34 +79,31 @@ export struct TwofaTab {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     } else {
-      Scroll() {
-        Column() {
-          Row() {
-            Row({ space: 6 }) {
-              Text(L10n.t('user_mgmt_2fa_enabled_switch', '启用双重验证2FA'))
-                .fontSize(14)
-                .fontColor(this.palette().onSurface)
-              SymbolGlyph($r('sys.symbol.questionmark_circle'))
-                .fontSize(16)
-                .fontColor([this.palette().subText])
-                .onClick((): void => {
-                  DialogUtil.showInfoDialog(L10n.t('tip', '提示'), this.helpText(),
-                    L10n.ok);
-                })
-            }
-            .layoutWeight(1)
-
-            Toggle({ type: ToggleType.Switch, isOn: this.twoFaEnabled() })
-              .selectedColor(this.palette().primary)
-              .enabled(!this.ctrl.isTwofaLoading(this.uid))
-              .onChange((isOn: boolean): void => {
-                void this.onToggle(isOn);
+      Column() {
+        Row() {
+          Row({ space: 6 }) {
+            Text(L10n.t('user_mgmt_2fa_enabled_switch', '启用双重验证2FA'))
+              .fontSize(14)
+              .fontColor(this.palette().onSurface)
+            SymbolGlyph($r('sys.symbol.questionmark_circle'))
+              .fontSize(16)
+              .fontColor([this.palette().subText])
+              .onClick((): void => {
+                DialogUtil.showInfoDialog(L10n.t('tip', '提示'), this.helpText(),
+                  L10n.ok);
               })
           }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
+          .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.twoFaEnabled() })
+            .selectedColor(this.palette().primary)
+            .enabled(!this.ctrl.isTwofaLoading(this.uid))
+            .onChange((isOn: boolean): void => {
+              void this.onToggle(isOn);
+            })
         }
         .width('100%')
+        .alignItems(VerticalAlign.Center)
         .padding(12)
         .borderRadius(12)
         .backgroundColor(this.palette().cardBg)
@@ -108,8 +111,9 @@ export struct TwofaTab {
       }
       .width('100%')
       .height('100%')
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.Spring)
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
+      .padding({ left: 12, right: 12, top: 8, bottom: 12 })
     }
   }
 }

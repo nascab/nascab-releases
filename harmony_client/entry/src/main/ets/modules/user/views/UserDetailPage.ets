@@ -1,3 +1,4 @@
+import { CommonModifier } from '@kit.ArkUI';
 import { L10n } from '../../../core/localization/L10n';
 import { AppTheme, ThemePalette } from '../../../core/theme/AppTheme';
 import { PageScaffold } from '../../../common/PageScaffold';
@@ -22,8 +23,11 @@ export struct UserDetailPage {
   };
   ctrl: UserManagementController = UserManagementController.getInstance();
   @Local activeTabIndex: number = 0;
+  /** TabBar 通用属性修饰器：页签靠左排列（align 仅在 BarMode.Scrollable 下生效，API15+） */
+  private tabBarModifier: CommonModifier = new CommonModifier();
 
   aboutToAppear(): void {
+    this.tabBarModifier.align(Alignment.Start);
     // 直接进入详情时以参数为准（对齐 Flutter selectedIds 单值收敛）
     if (this.ctrl.selectedId !== this.param.uid) {
       this.ctrl.selectUser(this.param.uid);
@@ -71,7 +75,7 @@ export struct UserDetailPage {
         }
       })
 
-      Tabs({ index: this.activeTabIndex, barPosition: BarPosition.Start }) {
+      Tabs({ index: this.activeTabIndex, barPosition: BarPosition.Start, barModifier: this.tabBarModifier }) {
         TabContent() {
           TwofaTab({ uid: this.user()!.id, user: this.user()!, ctrl: this.ctrl })
         }
