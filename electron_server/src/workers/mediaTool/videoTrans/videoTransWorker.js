@@ -166,6 +166,7 @@ async function countFilesRecursive({ root, shouldSkipDir, isStopRequested }) {
     }
     for (const name of entries) {
       if (isStopRequested()) return total;
+      if (name.startsWith('.')) continue; // 跳过隐藏文件（如 macOS 的 ._ 元数据文件）
       const full = path.join(dir, name);
       let stat;
       try {
@@ -197,6 +198,7 @@ async function walkFilesRecursive({ root, shouldSkipDir, isStopRequested, onFile
     }
     for (const name of entries) {
       if (isStopRequested()) return;
+      if (name.startsWith('.')) continue; // 跳过隐藏文件（如 macOS 的 ._ 元数据文件）
       const full = path.join(dir, name);
       let stat;
       try {
@@ -885,7 +887,7 @@ class VideoTransWorker {
         });
         return;
       }
-      const ok = await this._handleOneFile({
+      const res = await this._handleOneFile({
         inputPath: prepared.sourceResolved,
         outputPath,
         cfg,
@@ -894,7 +896,7 @@ class VideoTransWorker {
         relPath: path.basename(prepared.sourceResolved),
       });
 
-      if (ok && !isStopRequested()) {
+      if (res.ok && !isStopRequested()) {
         const outputBytes = await getFileSize(outputPath);
         await this._updateTask({
           done_files: 1,
@@ -906,9 +908,19 @@ class VideoTransWorker {
           progress: '',
           last_end_time: new Date(),
         });
-      }
-
-      if (isStopRequested()) {
+      } else if (res.error && !isStopRequested()) {
+        await this._updateTask({
+          done_files: 1,
+          handled_input_bytes: inputBytes,
+          handled_output_bytes: 0,
+          processed_count: 0,
+          skipped_count: 1,
+          status: tableMediaToolVideoTrans.STATUS_STOPPED,
+          last_error: safeTruncate(res.error, 800),
+          progress: '',
+          last_end_time: new Date(),
+        });
+      } else {
         await this._updateTask({
           status: tableMediaToolVideoTrans.STATUS_STOPPED,
           progress: '',
@@ -929,6 +941,8 @@ class VideoTransWorker {
     let processedCount = 0;
     let skippedCount = 0;
     let nonVideoCount = 0;
+    let failedCount = 0;
+    const failedSamples = [];
 
     const cfg = prepared.cfg || {};
     const outExt = buildOutputExt(cfg.out_format);
@@ -993,7 +1007,7 @@ class VideoTransWorker {
           return;
         }
 
-        const ok = await this._handleOneFile({
+        const res = await this._handleOneFile({
           inputPath: full,
           outputPath,
           cfg,
@@ -1001,13 +1015,26 @@ class VideoTransWorker {
           nonVideoPolicy: prepared.nonVideoPolicy,
           relPath: rel,
         });
-        if (!ok) return;
+        if (res.stopped || isStopRequested()) return;
 
-        const outputBytes = await getFileSize(outputPath);
-        processedCount += 1;
+        if (res.ok) {
+          const outputBytes = await getFileSize(outputPath);
+          processedCount += 1;
+          doneFiles += 1;
+          handledInputBytes += inputBytes;
+          handledOutputBytes += outputBytes;
+          await flush(false);
+          return;
+        }
+
+        // 出错的文件直接跳过，不中断整个任务，仅记录失败信息
+        failedCount += 1;
+        skippedCount += 1;
         doneFiles += 1;
         handledInputBytes += inputBytes;
-        handledOutputBytes += outputBytes;
+        if (failedSamples.length < 5) {
+          failedSamples.push(`${rel}: ${safeTruncate(res.error || '', 160)}`);
+        }
         await flush(false);
       },
     });
@@ -1024,14 +1051,14 @@ class VideoTransWorker {
 
     await this._updateTask({
       status: tableMediaToolVideoTrans.STATUS_STOPPED,
-      last_error: null,
+      last_error: failedCount > 0 ? safeTruncate(`${failedCount} 个文件转换失败: ${failedSamples.join(' | ')}`, 800) : null,
       progress: '',
       last_end_time: new Date(),
     });
   }
 
   async _handleOneFile({ inputPath, outputPath, cfg, isStopRequested, relPath }) {
-    if (isStopRequested()) return false;
+    if (isStopRequested()) return { ok: false, stopped: true };
 
     let cmdRef = null;
     let timer = null;
@@ -1098,8 +1125,8 @@ class VideoTransWorker {
         timer = null;
       }
       await this._updateTask({ progress: '' }).catch(() => null);
-      if (!res || !res.ok) return false;
-      return true;
+      if (!res || !res.ok) return { ok: false, stopped: !!(res && res.stopped) };
+      return { ok: true };
     } catch (e) {
       this._currentCommand = null;
       if (cmdRef) {
@@ -1114,14 +1141,9 @@ class VideoTransWorker {
         timer = null;
       }
       const msg = e && e.message ? String(e.message) : String(e);
-      await this._updateTask({
-        status: tableMediaToolVideoTrans.STATUS_ERROR,
-        last_error: safeTruncate(msg, 800),
-        progress: '',
-        last_end_time: new Date(),
-      });
-      this.stopRequested = true;
-      return false;
+      // 单个文件转码失败不再中断整个任务，交由调用方按「跳过」处理
+      await this._updateTask({ progress: '' }).catch(() => null);
+      return { ok: false, error: msg };
     }
   }
 
