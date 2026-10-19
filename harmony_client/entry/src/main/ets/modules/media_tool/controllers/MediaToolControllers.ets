@@ -5,6 +5,7 @@ import { DialogUtil } from '../../../common/DialogUtil';
 import { PickOption, showOptionPickSheet } from '../../../common/components/OptionPickSheet';
 import { L10n } from '../../../core/localization/L10n';
 import { NotesFileUtils } from '../../notes/services/NotesFileUtils';
+import { DownloadService } from '../../transfer/services/DownloadService';
 import {
   MediaToolApiResult, MediaToolImageCompressApiService, MediaToolImageCompressResult,
   MediaToolTaskApiService
@@ -29,9 +30,10 @@ const SUPPORTED_IMAGE_EXTS: string[] = [
 ];
 
 function isSupportedImagePath(nameOrPath: string): boolean {
-  const lower = nameOrPath.trim().toLowerCase();
+  // 剥除查询参数后再取扩展名（PhotoViewPicker 返回的 URI 可能带 ? 参数）
+  const clean = nameOrPath.trim().split('?')[0].toLowerCase();
   for (const ext of SUPPORTED_IMAGE_EXTS) {
-    if (lower.endsWith(ext)) {
+    if (clean.endsWith(ext)) {
       return true;
     }
   }
@@ -137,21 +139,23 @@ export class ImageCompressController {
 
   // ===== 上传（对齐 Flutter pickAndUploadByMobileSource） =====
 
-  /** 弹出来源选择（相册/文件），返回 'media' | 'files' | ''（取消） */
+  /**
+   * 弹出来源选择（相册/文件），返回 'media' | 'files' | ''（取消）。
+   * 该功能仅压缩图片，来源文案不体现视频（对齐 Flutter showMobileUploadSourcePicker 无标题两选项）。
+   */
   pickSource(): Promise<string> {
     return new Promise<string>((resolve: (v: string) => void) => {
       const options: PickOption[] = [
-        new PickOption('media', L10n.t('upload_center_pick_media', '选择媒体文件')),
-        new PickOption('files', L10n.t('folder_upload_file', '选择文件'))
+        new PickOption('media', L10n.t('media_tool_pick_images', '选择图片')),
+        new PickOption('files', L10n.t('folder_upload_file', '上传文件'))
       ];
-      showOptionPickSheet(
-        L10n.t('media_tool_pick_images', '选择图片'), options, '', (key: string): void => {
-          resolve(key);
-        });
+      showOptionPickSheet('', options, '', (key: string): void => {
+        resolve(key);
+      });
     });
   }
 
-  /** 选择图片并逐个上传（相册/文件来源统一入口） */
+  /** 选择图片并逐个上传（相册仅图片 / 文件来源统一入口） */
   async pickAndUpload(): Promise<void> {
     if (this.busy) {
       return;
@@ -161,7 +165,7 @@ export class ImageCompressController {
       return;
     }
     const uris = source === 'media'
-      ? await MediaPickerUtil.pickMedia()
+      ? await MediaPickerUtil.pickImages()
       : await MediaPickerUtil.pickFiles();
     if (uris.length === 0) {
       return;
@@ -265,14 +269,18 @@ export class ImageCompressController {
     this.lastUploadStartTime = 0;
   }
 
-  /** 保存单个结果（走系统"另存为"，对齐 Flutter _downloadViaCenter 语义） */
+  /** 保存单个压缩结果：直接下载并保存到系统相册（用户确认后写入图库） */
   async saveFile(item: MediaToolImageCompressResult): Promise<void> {
     const dot = item.fileName.lastIndexOf('.');
     const base = dot > 0 ? item.fileName.substring(0, dot) : item.fileName;
     const suggested = `${base}.${item.outputFormat}`;
     const url = MediaToolImageCompressApiService.buildFileDownloadUrl(item.outputFullPath, suggested);
     try {
-      await NotesFileUtils.saveUrlAs(url, suggested);
+      const ok = await DownloadService.getInstance().saveUrlToGallery(url, suggested);
+      // ok=false 涵盖用户取消，静默不提示；成功提示已保存
+      if (ok) {
+        ToastUtil.show(L10n.t('save_to_gallery_success', '已保存到图库'));
+      }
     } catch (e) {
       ToastUtil.show(e instanceof Error ? e.message : L10n.operationFailed);
     }

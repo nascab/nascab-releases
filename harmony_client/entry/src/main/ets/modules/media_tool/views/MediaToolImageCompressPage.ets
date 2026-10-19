@@ -181,33 +181,49 @@ export struct MediaToolImageCompressPage {
           // 设置菜单行（对齐 Wrap[_QualityMenu, _FormatMenu, _SizeMenu, _MetaMenu]）
           Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(10),
             cross: LengthMetrics.vp(10) } }) {
-            this.MenuButton($r('sys.symbol.wand_and_stars'), this.qualityLabel(), (): void => {
-              showOptionPickSheet(L10n.t('media_tool_quality', '质量'), this.qualityOptions(),
-                this.ctrl.quality, (key: string): void => {
-                  this.ctrl.setQuality(key);
-                });
+            ImageCompressMenuChip({
+              icon: $r('sys.symbol.wand_and_stars'),
+              label: this.qualityLabel(),
+              onTap: (): void => {
+                showOptionPickSheet(L10n.t('media_tool_quality', '质量'), this.qualityOptions(),
+                  this.ctrl.quality, (key: string): void => {
+                    this.ctrl.setQuality(key);
+                  });
+              }
             })
-            this.MenuButton($r('sys.symbol.picture'), this.formatLabel(), (): void => {
-              showOptionPickSheet(L10n.t('media_tool_format', '输出格式'), this.formatOptions(),
-                this.ctrl.format, (key: string): void => {
-                  this.ctrl.setFormat(key);
-                });
+            ImageCompressMenuChip({
+              icon: $r('sys.symbol.picture'),
+              label: this.formatLabel(),
+              onTap: (): void => {
+                showOptionPickSheet(L10n.t('media_tool_format', '输出格式'), this.formatOptions(),
+                  this.ctrl.format, (key: string): void => {
+                    this.ctrl.setFormat(key);
+                  });
+              }
             })
-            this.MenuButton($r('sys.symbol.rectangle_stack'), this.sizeLabel(), (): void => {
-              showOptionPickSheet(L10n.t('media_tool_out_size', '输出尺寸'), this.sizeOptions(),
-                this.ctrl.size, (key: string): void => {
-                  if (key === 'custom') {
-                    this.showCustomSizeDialog();
-                    return;
-                  }
-                  this.ctrl.setSize(key);
-                });
+            ImageCompressMenuChip({
+              icon: $r('sys.symbol.rectangle_stack'),
+              label: this.sizeLabel(),
+              onTap: (): void => {
+                showOptionPickSheet(L10n.t('media_tool_out_size', '输出尺寸'), this.sizeOptions(),
+                  this.ctrl.size, (key: string): void => {
+                    if (key === 'custom') {
+                      this.showCustomSizeDialog();
+                      return;
+                    }
+                    this.ctrl.setSize(key);
+                  });
+              }
             })
-            this.MenuButton($r('sys.symbol.info_circle'), this.metaLabel(), (): void => {
-              showOptionPickSheet(L10n.t('media_tool_with_meta', '保留元数据'), this.metaOptions(),
-                this.ctrl.withMeta ? 'keep' : 'strip', (key: string): void => {
-                  this.ctrl.setWithMeta(key === 'keep');
-                });
+            ImageCompressMenuChip({
+              icon: $r('sys.symbol.info_circle'),
+              label: this.metaLabel(),
+              onTap: (): void => {
+                showOptionPickSheet(L10n.t('media_tool_with_meta', '保留元数据'), this.metaOptions(),
+                  this.ctrl.withMeta ? 'keep' : 'strip', (key: string): void => {
+                    this.ctrl.setWithMeta(key === 'keep');
+                  });
+              }
             })
           }
           .width('100%')
@@ -332,30 +348,6 @@ export struct MediaToolImageCompressPage {
     })
   }
 
-  /** 设置菜单按钮（对齐 CustomHoverSelectMenu 的移动端形态：图标+文字+下拉箭头） */
-  @Builder
-  MenuButton(icon: Resource, label: string, onTap: () => void) {
-    Row({ space: 6 }) {
-      SymbolGlyph(icon)
-        .fontSize(15)
-        .fontColor([this.palette().primary])
-      Text(label)
-        .fontSize(13)
-        .fontColor(this.palette().onSurface)
-        .maxLines(1)
-      SymbolGlyph($r('sys.symbol.chevron_down'))
-        .fontSize(12)
-        .fontColor([this.palette().hint])
-    }
-    .padding({ left: 10, right: 10, top: 9, bottom: 9 })
-    .borderRadius(10)
-    .backgroundColor(this.palette().surfaceBg)
-    .border({ width: 1, color: this.palette().divider })
-    .onClick(() => {
-      onTap();
-    })
-  }
-
   /** 统计栏图标按钮（对齐 IconButton，禁用置灰） */
   @Builder
   IconAction(icon: Resource, label: string, onTap: () => void) {
@@ -450,5 +442,44 @@ export struct MediaToolImageCompressPage {
     const i = Math.min(suffixes.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
     const v = bytes / Math.pow(1024, i);
     return `${v.toFixed(1)} ${suffixes[i]}`;
+  }
+}
+
+/**
+ * 设置菜单按钮（对齐 CustomHoverSelectMenu 的移动端形态：图标+文字+下拉箭头）。
+ * 以 @ComponentV2 + @Param 实现，保证选中项变化时 label 实时刷新
+ * （@Builder 按值传参不会随状态变化刷新）。
+ */
+@ComponentV2
+struct ImageCompressMenuChip {
+  @Param icon: Resource = $r('sys.symbol.wand_and_stars');
+  @Param label: string = '';
+  @Param onTap: () => void = (): void => {
+  };
+
+  private palette(): ThemePalette {
+    return AppTheme.current();
+  }
+
+  build() {
+    Row({ space: 6 }) {
+      SymbolGlyph(this.icon)
+        .fontSize(15)
+        .fontColor([this.palette().primary])
+      Text(this.label)
+        .fontSize(13)
+        .fontColor(this.palette().onSurface)
+        .maxLines(1)
+      SymbolGlyph($r('sys.symbol.chevron_down'))
+        .fontSize(12)
+        .fontColor([this.palette().hint])
+    }
+    .padding({ left: 10, right: 10, top: 9, bottom: 9 })
+    .borderRadius(10)
+    .backgroundColor(this.palette().surfaceBg)
+    .border({ width: 1, color: this.palette().divider })
+    .onClick(() => {
+      this.onTap();
+    })
   }
 }

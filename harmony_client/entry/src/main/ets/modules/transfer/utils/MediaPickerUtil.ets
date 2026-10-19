@@ -24,6 +24,21 @@ export class MediaPickerUtil {
     }
   }
 
+  /** 打开相册选择器（仅图片，不含视频），返回选中的 URI 列表 */
+  static async pickImages(): Promise<string[]> {
+    try {
+      const photoPicker = new picker.PhotoViewPicker();
+      const opts = new picker.PhotoSelectOptions();
+      opts.MIMEType = picker.PhotoViewMIMETypes.IMAGE_TYPE;
+      opts.maxSelectNumber = 500;
+      const result: picker.PhotoSelectResult = await photoPicker.select(opts);
+      return result.photoUris ?? [];
+    } catch (_e) {
+      // 用户取消选择
+      return [];
+    }
+  }
+
   /** 打开文件选择器，返回选中的 URI 列表 */
   static async pickFiles(): Promise<string[]> {
     try {

@@ -1,4 +1,5 @@
 import { request } from '@kit.BasicServicesKit';
+import { http } from '@kit.NetworkKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { fileUri, fileShare, picker } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
@@ -944,5 +945,57 @@ export class DownloadService {
   /** 是否为可保存到图库的图片/视频（bottom 菜单按此决定是否展示该项） */
   static isSavableMedia(displayName: string): boolean {
     return DownloadService.mediaKind(displayName) !== 0;
+  }
+
+  /**
+   * 下载 URL 内容并直接保存到系统相册（图片/视频）。
+   * 先落地到应用沙箱临时目录，再复用 saveToGallery 弹出系统保存对话框写入图库。
+   * 网络/IO 失败抛错（调用方可提示）；用户取消返回 false。
+   */
+  async saveUrlToGallery(url: string, displayName: string): Promise<boolean> {
+    const ctx = WindowStore.appContext;
+    if (!ctx) {
+      throw new Error('download_context_missing');
+    }
+    const tmpDir: string = `${ctx.cacheDir}/url_gallery`;
+    const tmpPath: string = `${tmpDir}/${displayName}`;
+    let file: fs.File | undefined = undefined;
+    const client: http.HttpRequest = http.createHttp();
+    try {
+      if (!fs.accessSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, true);
+      }
+      const resp: http.HttpResponse = await client.request(url, {
+        method: http.RequestMethod.GET,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 15000,
+        readTimeout: 120000,
+        maxLimit: 200 * 1024 * 1024
+      });
+      if (resp.responseCode < 200 || resp.responseCode >= 300) {
+        throw new Error(`HTTP ${resp.responseCode}`);
+      }
+      file = fs.openSync(tmpPath, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, resp.result as ArrayBuffer);
+      fs.closeSync(file);
+      file = undefined;
+      return await this.saveToGallery(tmpPath, displayName);
+    } finally {
+      if (file !== undefined) {
+        try {
+          fs.closeSync(file);
+        } catch (_e) {
+          // 关闭失败忽略
+        }
+      }
+      client.destroy();
+      try {
+        if (fs.accessSync(tmpPath)) {
+          fs.unlinkSync(tmpPath);
+        }
+      } catch (_e) {
+        // 清理失败忽略
+      }
+    }
   }
 }
