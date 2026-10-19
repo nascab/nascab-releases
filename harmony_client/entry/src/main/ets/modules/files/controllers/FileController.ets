@@ -115,6 +115,7 @@ export class FileController {
   private handleFileChange(data: FileChangeData): void {
     const changeDir = data.changeDir ?? '';
     if (changeDir.length > 0 && this.currentPath.length > 0 && changeDir !== this.currentPath) {
+      console.info(`[FileWatcher] skip: changeDir=${changeDir} currentPath=${this.currentPath}`);
       return;
     }
     const removed = data.removed ?? [];
