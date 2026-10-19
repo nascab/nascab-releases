@@ -17,71 +17,79 @@ export struct SecuritySettingsPanel {
   }
 
   build() {
-    Scroll() {
-      Column() {
-        GlassCard({ padValue: 16 }) {
-          Column({ space: 12 }) {
-            Text(L10n.t('security.ip_ban_rules', 'IP封禁规则'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.palette().onSurface)
-              .width('100%')
+    Column() {
+      Scroll() {
+        Column() {
+          GlassCard({ padValue: 16 }) {
+            Column({ space: 12 }) {
+              Text(L10n.t('security.ip_ban_rules', 'IP封禁规则'))
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.palette().onSurface)
+                .width('100%')
 
-            SecuritySwitchRow({
-              title: L10n.t('security.enable_ip_ban', '启用IP封禁'),
-              isOn: this.ctrl.banEnabled,
-              onChange: (v: boolean): void => {
-                this.ctrl.setBanEnabled(v);
-              }
-            })
-
-            Row({ space: 12 }) {
-              SecurityNumberField({
-                label: L10n.t('security.failed_attempts', '密码错误次数'),
-                text: this.ctrl.maxFailedAttemptsText,
-                onChange: (v: string): void => {
-                  this.ctrl.onMaxFailedAttemptsInput(v);
+              SecuritySwitchRow({
+                title: L10n.t('security.enable_ip_ban', '启用IP封禁'),
+                isOn: this.ctrl.banEnabled,
+                onChange: (v: boolean): void => {
+                  this.ctrl.setBanEnabled(v);
                 }
               })
-              SecurityNumberField({
-                label: L10n.t('security.ban_minutes', '封禁分钟数'),
-                text: this.ctrl.banMinutesText,
-                onChange: (v: string): void => {
-                  this.ctrl.onBanMinutesInput(v);
-                }
-              })
-              Button(L10n.t('save', '保存'), { type: ButtonType.Capsule })
-                .height(44)
-                .fontSize(14)
-                .backgroundColor(this.palette().buttonBg)
-                .fontColor(this.palette().buttonText)
-                .onClick((): void => {
-                  void this.ctrl.saveConfig();
+
+              Row({ space: 12 }) {
+                SecurityNumberField({
+                  label: L10n.t('security.failed_attempts', '密码错误次数'),
+                  text: this.ctrl.maxFailedAttemptsText,
+                  onChange: (v: string): void => {
+                    this.ctrl.onMaxFailedAttemptsInput(v);
+                  }
                 })
+                SecurityNumberField({
+                  label: L10n.t('security.ban_minutes', '封禁分钟数'),
+                  text: this.ctrl.banMinutesText,
+                  onChange: (v: string): void => {
+                    this.ctrl.onBanMinutesInput(v);
+                  }
+                })
+                Button(L10n.t('save', '保存'), { type: ButtonType.Capsule })
+                  .height(44)
+                  .fontSize(14)
+                  .backgroundColor(this.palette().buttonBg)
+                  .fontColor(this.palette().buttonText)
+                  .onClick((): void => {
+                    void this.ctrl.saveConfig();
+                  })
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Bottom)
+
+              SecuritySwitchRow({
+                title: L10n.t('security.bypass_lan_auth', '局域网环境不验证'),
+                isOn: this.ctrl.bypassLanAuth,
+                onChange: (v: boolean): void => {
+                  this.ctrl.setBypassLanAuth(v);
+                }
+              })
             }
             .width('100%')
-            .alignItems(VerticalAlign.Bottom)
-
-            SecuritySwitchRow({
-              title: L10n.t('security.bypass_lan_auth', '局域网环境不验证'),
-              isOn: this.ctrl.bypassLanAuth,
-              onChange: (v: boolean): void => {
-                this.ctrl.setBypassLanAuth(v);
-              }
-            })
+            .alignItems(HorizontalAlign.Start)
           }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
         }
+        .width('100%')
+        // 撑满 Scroll 视口高度，避免内容不足一屏时被垂直居中
+        .constraintSize({ minHeight: '100%' })
+        .justifyContent(FlexAlign.Start)
+        // 对齐 Flutter appMode padding: fromLTRB(18, 10, 18, 16)
+        .padding({ left: 18, right: 18, top: 10, bottom: 16 })
       }
       .width('100%')
-      // 对齐 Flutter appMode padding: fromLTRB(18, 10, 18, 16)
-      .padding({ left: 18, right: 18, top: 10, bottom: 16 })
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .height('100%')
-    .scrollBar(BarState.Off)
-    .edgeEffect(EdgeEffect.Spring)
+    .backgroundColor(this.palette().pageBg)
   }
 }
 

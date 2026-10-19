@@ -19,53 +19,61 @@ export struct BestPracticesPanel {
   }
 
   build() {
-    Scroll() {
-      Column() {
-        Text(L10n.t('security.best_practices', '最佳实践'))
-          .fontSize(19)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.palette().onSurface)
-          .width('100%')
-
-        // 自定义组件不支持直接链式属性，外层 Column 承载与标题的 12 间距
+    Column() {
+      Scroll() {
         Column() {
-          GlassCard({ padValue: 20 }) {
-            Column() {
-              Text(L10n.t('security.best_practices_desc', '为了安全使用本系统，建议安全设置如下：'))
-                .fontSize(14)
-                .fontColor(this.palette().subText)
-                .width('100%')
+          Text(L10n.t('security.best_practices', '最佳实践'))
+            .fontSize(19)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.palette().onSurface)
+            .width('100%')
 
-              Column({ space: 16 }) {
-                this.BestItem('1', L10n.t('security.best_practices_item1', '不使用简单密码，如111222等简单重复的字符'))
-                Column({ space: 8 }) {
-                  this.BestItem('2', L10n.t('security.best_practices_item2', '开启2FA双重验证'))
-                  this.GoToUserLink()
+          // 自定义组件不支持直接链式属性，外层 Column 承载与标题的 12 间距
+          Column() {
+            GlassCard({ padValue: 20 }) {
+              Column() {
+                Text(L10n.t('security.best_practices_desc', '为了安全使用本系统，建议安全设置如下：'))
+                  .fontSize(14)
+                  .fontColor(this.palette().subText)
+                  .width('100%')
+
+                Column({ space: 16 }) {
+                  this.BestItem('1', L10n.t('security.best_practices_item1', '不使用简单密码，如111222等简单重复的字符'))
+                  Column({ space: 8 }) {
+                    this.BestItem('2', L10n.t('security.best_practices_item2', '开启2FA双重验证'))
+                    this.GoToUserLink()
+                  }
+                  .width('100%')
+                  .alignItems(HorizontalAlign.Start)
+                  this.BestItem('3', L10n.t('security.best_practices_item3',
+                    '尽量不要公开自己的远程访问匹配码（匹配码只是P2P的通道标识，即使别人知道了你的匹配码，仍然需要用户名/密码/2FA等信息才能登录你的系统）'))
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Start)
-                this.BestItem('3', L10n.t('security.best_practices_item3',
-                  '尽量不要公开自己的远程访问匹配码（匹配码只是P2P的通道标识，即使别人知道了你的匹配码，仍然需要用户名/密码/2FA等信息才能登录你的系统）'))
+                .margin({ top: 20 })
               }
               .width('100%')
               .alignItems(HorizontalAlign.Start)
-              .margin({ top: 20 })
             }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
           }
+          .width('100%')
+          .margin({ top: 12 })
         }
         .width('100%')
-        .margin({ top: 12 })
+        // 撑满 Scroll 视口高度，避免内容不足一屏时被垂直居中
+        .constraintSize({ minHeight: '100%' })
+        .justifyContent(FlexAlign.Start)
+        // 对齐 Flutter Padding(all: 12)
+        .padding(12)
       }
       .width('100%')
-      // 对齐 Flutter Padding(all: 12)
-      .padding(12)
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .height('100%')
-    .scrollBar(BarState.Off)
-    .edgeEffect(EdgeEffect.Spring)
+    .backgroundColor(this.palette().pageBg)
   }
 
   /** 编号建议项（对齐 _buildItem：主色圆形编号 + 文本） */
