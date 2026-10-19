@@ -166,6 +166,7 @@ export struct QuickShareView {
           }
           .width('100%')
           .layoutWeight(1)
+          .margin({ top: 10 })
         } else {
           List({ space: 14 }) {
             ForEach(this.ctrl.items, (item: QuickShareItem) => {
@@ -177,6 +178,7 @@ export struct QuickShareView {
           .width('100%')
           .layoutWeight(1)
           .scrollBar(BarState.Auto)
+          .margin({ top: 10 })
         }
       }
       .padding({ left: 12, right: 12, top: 12, bottom: 12 })

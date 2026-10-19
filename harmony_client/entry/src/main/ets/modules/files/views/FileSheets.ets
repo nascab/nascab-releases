@@ -9,6 +9,8 @@ import { FileFormat, FileItem, FileModelAccess, FileStats } from '../models/File
 import { FileStatsService } from '../service/FileStatsService';
 import { FileOpener } from '../service/FileOpener';
 import { AppRouter } from '../../../router/AppRouter';
+import { NavUtil } from '../../../common/NavUtil';
+import { ShareServerMainPageParam, ShareServerPageKeys } from '../../share_server/router/ShareServerRoutes';
 import { UploadCenterParam } from '../../transfer/views/UploadCenterPage';
 import { DownloadService } from '../../transfer/services/DownloadService';
 import { DownloadTarget } from '../../transfer/models/DownloadModels';
@@ -735,8 +737,15 @@ struct FileItemMenuSheetInner {
             title: L10n.t('quick_share_title', '快速分享'),
             onSelect: (): void => {
               this.p.close();
-              // 快速分享模块未迁移
-              ToastUtil.show(L10n.featureComingSoon);
+              const p = this.path.trim();
+              if (p.length === 0) {
+                this.p.ctrl.clearSelect();
+                return;
+              }
+              const sp = new ShareServerMainPageParam();
+              sp.pageKey = ShareServerPageKeys.QUICK;
+              sp.quickShareCreatePath = p;
+              NavUtil.push(AppRouter.SHARE_SERVER_MAIN, sp);
               this.p.ctrl.clearSelect();
             }
           })
