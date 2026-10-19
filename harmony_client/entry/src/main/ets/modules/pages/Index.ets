@@ -2,6 +2,7 @@ import { AppRouter } from '../../router/AppRouter';
 import { AppEventBus } from '../../common/AppEventBus';
 import { DialogUtil } from '../../common/DialogUtil';
 import { SheetUtil } from '../../common/SheetUtil';
+import { ToastUtil } from '../../common/ToastUtil';
 import { ServerListPage } from '../auth/views/ServerListPage';
 import { ServerListViewModel } from '../auth/views/server_list/ServerListViewModel';
 import { LoginPage } from '../auth/views/login/LoginPage';
@@ -130,6 +131,7 @@ struct Index {
     // 初始化全局弹窗工具（DialogUtil 依赖 UIContext）
     DialogUtil.init(this.getUIContext());
     SheetUtil.init(this.getUIContext());
+    ToastUtil.init(this.getUIContext());
     // 初始化全局导航栈（NavUtil 供无参视图与弹层回调推入路由页）
     NavUtil.init(this.pageStack);
     AppEventBus.onAuthSessionExpired(() => {

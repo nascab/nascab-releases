@@ -404,9 +404,12 @@ export struct ServiceDdnsView {
     .width('100%')
     .padding({ top: 6, bottom: 6 })
     .onClick((): void => {
-      if (!this.loading) {
-        this.ctrl.ddnsTypeDraft = value;
+      if (this.loading || this.typeSelected === value) {
+        return;
       }
+      this.ctrl.ddnsTypeDraft = value;
+      // 切换解析类型后刷新一次底部状态
+      void this.ctrl.refreshDdnsStatus(false, true);
     })
   }
 

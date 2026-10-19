@@ -8,6 +8,7 @@ import { WindowStore } from '../../../common/WindowStore';
 import { DialogUtil } from '../../../common/DialogUtil';
 import { BottomTabBar, BottomTabItem } from '../../../common/components/BottomTabBar';
 import { ServiceMainController } from '../controllers/ServiceMainController';
+import { NasCabAccountController } from '../controllers/NasCabAccountController';
 import { ServicePageKeys, ServiceMainPageParam } from '../router/ServiceRoutes';
 import { ServiceAccountView } from './ServiceAccountView';
 import { ServiceRemoteAccessView } from './ServiceRemoteAccessView';
@@ -54,6 +55,9 @@ export struct ServiceMainPage {
     }
     // 启动配对码轮询 + 初始化 DDNS（对齐 Flutter 子视图 initState）
     this.ctrl.startPairCodePolling();
+    // 立即加载账号信息与远程访问状态（对齐 Flutter NasCabAccountController/ServiceMainController 的 onInit）
+    void NasCabAccountController.getInstance().refreshUser();
+    void this.ctrl.refreshRemoteAccess();
     void this.initDdns();
   }
 
