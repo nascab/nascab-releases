@@ -148,7 +148,7 @@ export struct DockerTasksTab {
         }
       }
       .width('100%')
-      .padding({ left: 12, right: 12, bottom: 12 })
+      .padding({ left: 12, right: 12, top: 10, bottom: 12 })
     }
     .width('100%')
     .height('100%')
