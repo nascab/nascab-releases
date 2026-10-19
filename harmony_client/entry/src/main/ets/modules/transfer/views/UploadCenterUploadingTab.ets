@@ -262,7 +262,7 @@ export struct UploadCenterUploadingTab {
   @Builder
   BottomPickBar() {
     Row() {
-      Column() {
+      Column({ space: 3 }) {
         SymbolGlyph($r('sys.symbol.picture'))
           .fontSize(20)
           .fontColor([this.palette().primary])
@@ -272,9 +272,9 @@ export struct UploadCenterUploadingTab {
           .fontColor(this.palette().onSurface)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ left: 8 })
       }
       .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
       .layoutWeight(1)
       .height('100%')
       .padding({ left: 12, right: 12 })
@@ -287,7 +287,7 @@ export struct UploadCenterUploadingTab {
         .strokeWidth(1)
         .color(this.palette().divider)
 
-      Column() {
+      Column({ space: 3 }) {
         SymbolGlyph($r('sys.symbol.upload'))
           .fontSize(20)
           .fontColor([this.palette().primary])
@@ -297,9 +297,9 @@ export struct UploadCenterUploadingTab {
           .fontColor(this.palette().onSurface)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ left: 8 })
       }
       .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
       .layoutWeight(1)
       .height('100%')
       .padding({ left: 12, right: 12 })
