@@ -234,6 +234,19 @@ export class L10n {
   }
   static get serverEditPairCodeTitle(): string { return L10n.t('server_menu_edit_pair_code', '修改配对码'); }
   static get serverEditPairCodeContent(): string { return L10n.t('server_edit_pair_code_content', '请输入新的配对码'); }
+  static get serverRemoteConnectPref(): string { return L10n.t('server_remote_connect_pref', '远程连接偏好'); }
+  static get remotePrefDirectFirst(): string { return L10n.t('remote_pref_direct_first', 'P2P直连优先'); }
+  static get remotePrefRelayFirst(): string { return L10n.t('remote_pref_relay_first', 'P2P中继优先'); }
+  static get remotePrefDirectFirstDesc(): string {
+    return L10n.t('remote_pref_direct_first_desc', '优先点对点直连，成功后直连您的服务端，速度快，数据不经过远端节点，直连失败时回退到中继模式');
+  }
+  static get remotePrefRelayFirstDesc(): string {
+    return L10n.t('remote_pref_relay_first_desc', '不尝试点对点直连，数据经过远端服务器中转，速度较慢');
+  }
+  static get remotePrefPairCodeHint(): string { return L10n.t('remote_pref_pair_code_hint', '（使用配对码连接时生效）'); }
+  static get serverMoveToTop(): string { return L10n.t('server_move_to_top', '移动到列表顶部'); }
+  static get serverAutoLogin(): string { return L10n.t('server_auto_login', '启动时自动登录'); }
+  static get serverAutoLoginCancel(): string { return L10n.t('server_auto_login_cancel', '取消自动登录'); }
   static get serverListExitTitle(): string { return L10n.t('server_add_exit_title', '退出确认'); }
   static get serverListExitContent(): string { return L10n.t('server_list_exit_content', '确定要退出应用吗？'); }
   static get serverConnectFail(): string { return L10n.t('server_connect_fail', '无法连接到服务器，请检查网络连接或服务器地址'); }

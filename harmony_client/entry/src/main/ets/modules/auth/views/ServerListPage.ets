@@ -9,7 +9,6 @@ import { ServerListViewModel, validatePairCodeText } from './server_list/ServerL
 import { scanPairCodeQr } from './server_list/PairCodeScanner';
 import { AdminCreateView } from './admin_create/AdminCreateView';
 import {
-  ActionButton,
   AuthBackground,
   AuthHeader,
   AuthTheme,
@@ -17,6 +16,7 @@ import {
   DialogOverlay,
   DialogTextButton,
   InputDialogView,
+  RemotePrefDialogView,
   TwofaDialogView,
   maskPairCode,
   platformIconResource
@@ -92,17 +92,6 @@ export struct ServerListPage {
       .width('100%')
       .height('100%')
       .justifyContent(FlexAlign.Center)
-      // 服务器详情 bottom sheet
-      .bindSheet(this.vm.showServerSheet, this.ServerSheet(), {
-        height: SheetSize.FIT_CONTENT,
-        dragBar: false,
-        showClose: false,
-        backgroundColor: AuthTheme.dialogBg,
-        onWillDismiss: (_action: SheetDismiss) => {
-          // 返回键/点击遮罩/下滑都关闭
-          this.vm.closeServerSheet();
-        }
-      })
 
       // 点击服务器的加载遮罩
       if (this.vm.isTapConnecting) {
@@ -140,6 +129,11 @@ export struct ServerListPage {
           })
         }
       }
+      if (this.vm.remotePrefDialog.visible) {
+        DialogOverlay() {
+          RemotePrefDialogView({ state: this.vm.remotePrefDialog })
+        }
+      }
       if (this.vm.pairDialogVisible) {
         DialogOverlay() {
           this.PairCodeDialog()
@@ -156,91 +150,41 @@ export struct ServerListPage {
     .height('100%')
   }
 
+  /** 服务器 item 更多菜单（对齐 Flutter PopupMenuButton 的菜单项）：
+   *  编辑 / 远程连接偏好(有配对码) / 移动到列表顶部(已保存>1) / 启动时自动登录(或取消) / 删除 */
   @Builder
-  SheetInfoRow(labelKey: string, value: string) {
-    Row({ space: 12 }) {
-      // 绑定内解析语言key：切换语言后自动刷新（@Builder 按值传参不会随状态更新）
-      Text(L10n.t(labelKey))
-        .fontSize(13)
-        .fontColor(AuthTheme.textSecondary)
-        .width(80)
-      Text(value)
-        .fontSize(14)
-        .fontColor(AuthTheme.textMain)
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-    .width('100%')
-    .margin({ bottom: 12 })
-  }
-
-  /** 服务器详情底部面板：信息展示 + 操作按钮（删除为红色） */
-  @Builder
-  ServerSheet() {
-    Column() {
-      Text(this.vm.sheetServer?.serverName ?? '')
-        .fontSize(17)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(AuthTheme.textMain)
-        .width('100%')
-
-      Column() {
-        this.SheetInfoRow('server_add_protocol',
-          this.vm.sheetServer?.isP2p === true ? 'P2P'
-            : (this.vm.sheetServer?.serverUrl ?? '').startsWith('https') ? 'HTTPS' : 'HTTP')
-        this.SheetInfoRow('server_add_address_label',
-          this.vm.sheetServer?.isP2p === true ? (this.vm.sheetServer?.pairCode ?? '') : (this.vm.sheetServer?.serverUrl ?? ''))
-        this.SheetInfoRow('username', this.vm.sheetServer?.username ?? '')
+  ServerItemMenu(server: ServerInfo) {
+    Menu() {
+      MenuItem({ content: L10n.edit })
+        .contentFontColor(AuthTheme.textMain)
+        .onClick(() => {
+          this.vm.handleMenuSelection('edit', server);
+        })
+      if (server.hasPairCode()) {
+        MenuItem({ content: L10n.serverRemoteConnectPref })
+          .contentFontColor(AuthTheme.textMain)
+          .onClick(() => {
+            this.vm.handleMenuSelection('remote_pref', server);
+          })
       }
-      .margin({ top: 16 })
-      .width('100%')
-      .padding(16)
-      .backgroundColor(AuthTheme.nestedCard)
-      .borderRadius(12)
-
-      // 按钮统一靠右排列，宽度自适应（内边距一致）
-      Row({ space: 12 }) {
-        ActionButton({
-          label: L10n.authPairCodeConnect,
-          variant: 'primary',
-          action: () => {
-            const target = this.vm.sheetServer;
-            this.vm.closeServerSheet();
-            if (target !== undefined) {
-              void this.vm.handleServerTap(target);
-            }
-          }
-        })
-        ActionButton({
-          label: L10n.edit,
-          variant: 'outlined',
-          action: () => {
-            const target = this.vm.sheetServer;
-            this.vm.closeServerSheet();
-            if (target !== undefined) {
-              this.vm.handleMenuSelection('edit', target);
-            }
-          }
-        })
-        ActionButton({
-          label: L10n.delete,
-          variant: 'danger',
-          action: () => {
-            const target = this.vm.sheetServer;
-            this.vm.closeServerSheet();
-            if (target !== undefined) {
-              this.vm.handleMenuSelection('delete', target);
-            }
-          }
-        })
+      if (this.vm.savedServers.length > 1) {
+        MenuItem({ content: L10n.serverMoveToTop })
+          .contentFontColor(AuthTheme.textMain)
+          .onClick(() => {
+            this.vm.handleMenuSelection('move_to_top', server);
+          })
       }
-      .justifyContent(FlexAlign.End)
-      .margin({ top: 16 })
-      .width('100%')
+      MenuItem({ content: server.autoLoginOnStartup ? L10n.serverAutoLoginCancel : L10n.serverAutoLogin })
+        .contentFontColor(AuthTheme.textMain)
+        .onClick(() => {
+          this.vm.handleMenuSelection('toggle_auto_login', server);
+        })
+      MenuItem({ content: L10n.delete })
+        .contentFontColor(AuthTheme.errorColor)
+        .onClick(() => {
+          this.vm.handleMenuSelection('delete', server);
+        })
     }
-    .padding(20)
-    .width('100%')
   }
 
   @Builder
@@ -250,18 +194,25 @@ export struct ServerListPage {
         .width('100%')
         .height('100%')
         .backgroundColor(AuthTheme.mask)
-      Row({ space: 14 }) {
-        LoadingProgress()
-          .width(24)
-          .height(24)
-          .color(AuthTheme.primary)
-        Text(L10n.authLoginLoading)
-          .fontSize(14)
-          .fontColor(AuthTheme.textMain)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Column({ space: 10 }) {
+        Row({ space: 14 }) {
+          LoadingProgress()
+            .width(24)
+            .height(24)
+            .color(AuthTheme.primary)
+          Text(L10n.authLoginLoading)
+            .fontSize(14)
+            .fontColor(AuthTheme.textMain)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        // 取消连接：中断在途直连探测/P2P 建连（对齐 Flutter 加载对话框的取消）
+        DialogTextButton({
+          label: L10n.cancel,
+          action: () => this.vm.cancelTap()
+        })
       }
-      .padding({ left: 18, right: 18, top: 16, bottom: 16 })
+      .padding({ left: 18, right: 18, top: 16, bottom: 10 })
       .borderRadius(12)
       .backgroundColor(AuthTheme.dialogBg)
     }
@@ -398,13 +349,22 @@ export struct ServerListPage {
         }
         .width('100%')
 
-        Text(server.isP2p ? 'P2P' : server.serverUrl)
-          .fontSize(14)
-          .fontColor(AuthTheme.textSecondary)
-          .margin({ top: 4 })
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
+        // 地址行：开启启动自动登录时左侧显示闪电标识（对齐 Flutter 地址行布局）
+        Row({ space: 4 }) {
+          if (server.autoLoginOnStartup) {
+            SymbolGlyph($r('sys.symbol.bolt'))
+              .fontSize(16)
+              .fontColor([AuthTheme.primary])
+          }
+          Text(server.isP2p ? 'P2P' : server.serverUrl)
+            .fontSize(14)
+            .fontColor(AuthTheme.textSecondary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .margin({ top: 4 })
 
         if (server.hasPairCode()) {
           Text(L10n.serverPairCodeDisplay(maskPairCode(server.pairCode ?? '')))
@@ -414,6 +374,27 @@ export struct ServerListPage {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
+
+          // 远程连接偏好信息行「远程连接偏好: P2P直连优先 / P2P中继优先」+ 内联编辑图标（对齐 Flutter）
+          Row({ space: 4 }) {
+            Text(`${L10n.serverRemoteConnectPref}: ${server.p2pRelayPreferred ? L10n.remotePrefRelayFirst : L10n.remotePrefDirectFirst}`)
+              .fontSize(14)
+              .fontColor(AuthTheme.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            // 内联编辑图标：点击打开远程连接偏好对话框（子组件 onClick 消费事件，不触发整项点击）
+            SymbolGlyph($r('sys.symbol.pencil_line'))
+              .fontSize(16)
+              .fontColor([AuthTheme.textSecondary])
+              .padding(4)
+              .onClick(() => {
+                this.vm.handleMenuSelection('remote_pref', server);
+              })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .margin({ top: 4 })
         }
 
         if (server.username !== undefined && server.username.length > 0) {
@@ -438,7 +419,7 @@ export struct ServerListPage {
           .fillColor(AuthTheme.textSecondary)
           .margin({ right: 6 })
       } else {
-        // 已保存的服务器显示竖向三点菜单，点击弹出底部详情面板
+        // 已保存的服务器显示竖向三点菜单，点击弹出更多菜单（对齐 Flutter PopupMenuButton）
         Column({ space: 3 }) {
           Circle()
             .width(3.5)
@@ -457,9 +438,7 @@ export struct ServerListPage {
         .alignItems(HorizontalAlign.Center)
         .padding({ left: 9, right: 9, top: 11, bottom: 11 })
         .margin({ right: 6 })
-        .onClick(() => {
-          this.vm.openServerSheet(server);
-        })
+        .bindMenu(this.ServerItemMenu(server))
       }
     }
     .width('100%')

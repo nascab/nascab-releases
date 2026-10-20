@@ -4,13 +4,15 @@ import { LoginResponse, ServerStatusResponse } from '../../models/LoginResponse'
 import { ServerStorageService } from '../../../../core/storage/ServerStorageService';
 import { APIClient } from '../../../../core/network/APIClient';
 import { NetworkConfig } from '../../../../core/network/NetworkConfig';
+import { ConnectChannelManager } from '../../../../core/network/ConnectChannelManager';
 import { UdpBroadcastListener } from '../../../../core/network/UdpBroadcastListener';
 import { P2PService } from '../../../../p2p/P2PService';
+import { P2pIcePreference } from '../../../../p2p/P2pProtocol';
 import { L10n } from '../../../../core/localization/L10n';
 import { PreferencesStore } from '../../../../core/storage/PreferencesStore';
 import { CacheKeys } from '../../../../core/storage/CacheKeys';
 import { JsonCodec, ServerStatusJson, UdpDiscoveryJson } from '../../../../common/JsonTypes';
-import { ConfirmDialogState, InputDialogState, TwofaDialogState } from '../common/AuthUi';
+import { ConfirmDialogState, InputDialogState, RemotePrefDialogState, TwofaDialogState } from '../common/AuthUi';
 
 /** 配对码文本校验，对应 Flutter ApiController.validatePairCodeText */
 export function validatePairCodeText(code: string): string {
@@ -79,6 +81,87 @@ function buildLanServerUrl(lanIpv4: string, httpPort?: string, httpsPort?: strin
   return `http://${lan}:${port}`;
 }
 
+/** 直连候选地址（对齐 Flutter handleServerTap 中的 directCandidates 元组） */
+class DirectCandidate {
+  url: string = '';
+  /** 局域网兜底候选需校验返回 serverId 与目标服务器一致 */
+  requireServerIdMatch: boolean = false;
+
+  constructor(url: string, requireServerIdMatch: boolean) {
+    this.url = url;
+    this.requireServerIdMatch = requireServerIdMatch;
+  }
+}
+
+/** LAN 探测命中结果 */
+class TapLanHit {
+  url: string = '';
+  status: ServerStatusResponse | undefined = undefined;
+
+  constructor(url: string, status: ServerStatusResponse | undefined) {
+    this.url = url;
+    this.status = status;
+  }
+}
+
+/** 竞速结果：kind 取值 lan/p2p/fail/cancel */
+class TapRaceOutcome {
+  kind: string = 'fail';
+  url: string = '';
+  status: ServerStatusResponse | undefined = undefined;
+  error: Object | undefined = undefined;
+
+  constructor(kind: string) {
+    this.kind = kind;
+  }
+}
+
+/** 可一次性完成的异步信号（ArkTS 版 Completer<void>） */
+class DeferredSignal {
+  readonly promise: Promise<void>;
+  private resolver: () => void = () => {
+  };
+  private settled: boolean = false;
+
+  constructor() {
+    this.promise = new Promise<void>((resolve: () => void) => {
+      this.resolver = resolve;
+    });
+  }
+
+  resolve(): void {
+    if (!this.settled) {
+      this.settled = true;
+      this.resolver();
+    }
+  }
+}
+
+/** 可一次性完成的带值异步信号（ArkTS 版 Completer<T>） */
+class Deferred<T> {
+  readonly promise: Promise<T>;
+  private resolver: (value: T) => void = (_v: T) => {
+  };
+  private settled: boolean = false;
+
+  constructor() {
+    this.promise = new Promise<T>((resolve: (value: T) => void) => {
+      this.resolver = resolve;
+    });
+  }
+
+  get isSettled(): boolean {
+    return this.settled;
+  }
+
+  resolve(value: T): void {
+    if (!this.settled) {
+      this.settled = true;
+      this.resolver(value);
+    }
+  }
+}
+
 @ObservedV2
 export class ServerListViewModel {
   @Trace savedServers: ServerInfo[] = [];
@@ -87,18 +170,6 @@ export class ServerListViewModel {
   @Trace showCreateAdminView: boolean = false;
   @Trace selectedServer: ServerInfo | undefined = undefined;
   @Trace isTapConnecting: boolean = false;
-  /** 服务器详情 bottom sheet */
-  @Trace showServerSheet: boolean = false;
-  @Trace sheetServer: ServerInfo | undefined = undefined;
-
-  openServerSheet(server: ServerInfo): void {
-    this.sheetServer = server;
-    this.showServerSheet = true;
-  }
-
-  closeServerSheet(): void {
-    this.showServerSheet = false;
-  }
 
   readonly confirmDialog: ConfirmDialogState = new ConfirmDialogState();
   readonly privacyDialog: ConfirmDialogState = new ConfirmDialogState();
@@ -107,6 +178,8 @@ export class ServerListViewModel {
   readonly passwordDialog: InputDialogState = new InputDialogState();
   readonly editPairCodeDialog: InputDialogState = new InputDialogState();
   readonly twofaDialog: TwofaDialogState = new TwofaDialogState();
+  /** 远程连接偏好选择对话框（对齐 Flutter _buildRemoteConnectPrefDialog） */
+  readonly remotePrefDialog: RemotePrefDialogState = new RemotePrefDialogState();
 
   // 配对码连接对话框
   @Trace pairDialogVisible: boolean = false;
@@ -119,6 +192,12 @@ export class ServerListViewModel {
   private authService: AuthService = AuthService.getInstance();
   private tapLocked: boolean = false;
   private initFlowStarted: boolean = false;
+  /** 点击登录取消信号（对齐 Flutter _tapCancelCompleter） */
+  private tapCancelled: boolean = false;
+  private tapCancelSignal: DeferredSignal | undefined = undefined;
+  private tappingServer: ServerInfo | undefined = undefined;
+  /** 冷启动自动登录仅执行一次（对齐 Flutter _launchAutoLoginHandled） */
+  private static launchAutoLoginHandled: boolean = false;
 
   /** 登录成功后由页面注入：跳转主页 */
   onLoginSuccess: () => void = () => {
@@ -170,6 +249,38 @@ export class ServerListViewModel {
     await this.loadSavedServers();
     await this.startUdpListening();
     await this.checkLocalNasCabServerStatus();
+    await this.tryAutoLoginOnLaunch();
+  }
+
+  /// 冷启动自动登录：仅执行一次，复用 handleServerTap 完成通道选择与登录
+  /// （对齐 Flutter _tryAutoLoginOnLaunch）
+  private async tryAutoLoginOnLaunch(): Promise<void> {
+    if (ServerListViewModel.launchAutoLoginHandled) {
+      return;
+    }
+    ServerListViewModel.launchAutoLoginHandled = true;
+    let target: ServerInfo | undefined = undefined;
+    for (const s of this.savedServers) {
+      if (s.autoLoginOnStartup) {
+        target = s;
+        break;
+      }
+    }
+    if (target === undefined || target.isAutoScanned) {
+      return;
+    }
+    const token = (target.accessToken ?? '').trim();
+    if (token.length === 0) {
+      return;
+    }
+    if (!target.hasPairCode() && !target.hasDirectUrl()) {
+      return;
+    }
+    try {
+      await this.handleServerTap(target);
+    } catch (_e) {
+      // 自动登录失败静默处理，用户可手动重试
+    }
   }
 
   private isSameIdentity(left: ServerInfo, right: ServerInfo): boolean {
@@ -280,68 +391,118 @@ export class ServerListViewModel {
     this.showCreateAdminView = true;
   }
 
-  /// 处理服务器点击事件
-  /// 通道优先级：局域网直连 > P2P
+  /// 处理服务器点击事件（对齐 Flutter handleServerTap）
+  /// 有配对码时：局域网直连探测与 P2P 建连并行竞速，先成功者胜；
+  /// 无配对码时：按直连候选逐试。
   async handleServerTap(server: ServerInfo): Promise<void> {
     if (this.tapLocked) {
       return;
     }
     this.tapLocked = true;
+    this.tapCancelled = false;
+    this.tapCancelSignal = new DeferredSignal();
+    this.tappingServer = server;
     this.isTapConnecting = true;
     try {
-      const hasPairCode = server.hasPairCode();
-      const hasDirectUrl = server.hasDirectUrl() && server.serverUrl.trim() !== NetworkConfig.P2P_BASE_URL;
-      // 对齐 Flutter 双保护：可复用连接不拆、在建连接不拆（对同一配对码）
       const pairCode = (server.pairCode ?? '').trim();
+      const hasPairCode = pairCode.length > 0;
+      const hasDirectUrl = server.hasDirectUrl() && server.serverUrl.trim() !== NetworkConfig.P2P_BASE_URL;
       const p2p = P2PService.getInstance();
-      const p2pReusable = pairCode.length > 0 && p2p.isReusableFor(pairCode);
-      const p2pInFlight = pairCode.length > 0 && p2p.isConnectInFlightFor(pairCode);
 
-      let status: ServerStatusResponse | undefined = undefined;
-      let usingP2p = false;
-
-      // Phase 1: 局域网直连
+      // ── 直连候选（serverUrl 优先，lanIpv4 兜底，兜底候选需校验 serverId）──
+      // 蜂窝网络下不跳过私网 IP：组网软件（Tailscale/ZeroTier 等）会在蜂窝下经虚拟网卡直连；
+      // 不可达时 800ms 探测超时由并行 P2P 建连掩盖，不增加总耗时
+      const candidates: DirectCandidate[] = [];
       if (hasDirectUrl) {
-        if (!p2pReusable && !p2pInFlight) {
-          P2PService.getInstance().disconnect();
-        }
-        APIClient.getInstance().setBaseUrl(server.serverUrl.trim());
-        status = await this.authService.checkServerStatus(2000);
-
-        // serverUrl 失败，尝试 lanIpv4
-        if ((!status.success || !status.isNasCabServer) && hasPairCode) {
+        const primary = server.serverUrl.trim();
+        candidates.push(new DirectCandidate(primary, false));
+        if (hasPairCode) {
           const lan = (server.lanIpv4 ?? '').trim();
-          const lanUrl = lan.length > 0 ? `http://${lan}:${this.resolveHttpPort(server)}` : '';
-          const lanAlreadyTried = lanUrl.length > 0 && normalizeUrl(lanUrl) === normalizeUrl(server.serverUrl);
-          if (lan.length > 0 && !lanAlreadyTried) {
-            if (!p2pReusable && !p2pInFlight) {
-              P2PService.getInstance().disconnect();
-            }
-            APIClient.getInstance().setBaseUrl(lanUrl);
-            const lanStatus = await this.authService.checkServerStatus(2000);
-            if (this.matchServerId(lanStatus, server)) {
-              status = lanStatus;
+          if (lan.length > 0) {
+            const lanUrl = `http://${lan}:${this.resolveHttpPort(server)}`;
+            if (normalizeUrl(lanUrl) !== normalizeUrl(primary)) {
+              candidates.push(new DirectCandidate(lanUrl, true));
             }
           }
         }
       }
 
-      // Phase 2: P2P 自动探测直连/中继
-      if ((status === undefined || !status.success || !status.isNasCabServer) && hasPairCode) {
+      let status: ServerStatusResponse | undefined = undefined;
+      let usingP2p = false;
+
+      if (candidates.length > 0 && hasPairCode) {
+        // Phase 1+2 并行：LAN 直连探测用 checkServerStatusAt 独立请求（不动全局 baseUrl），
+        // 与 P2P 建连内部 setBaseUrl 无竞争；LAN 可达约 0.8s 内胜出，
+        // LAN 不可达时 P2P 已并行建连，省去原串行流程的双段等待
+        const p2pReusable = p2p.isReusableFor(pairCode);
+        const outcome = await this.raceLanAndP2p(server, candidates, p2pReusable);
+        if (outcome.kind === 'cancel' || this.tapCancelled) {
+          return;
+        }
+        if (outcome.kind === 'p2p') {
+          usingP2p = true;
+          if (!APIClient.getInstance().isP2pMode) {
+            APIClient.getInstance().setBaseUrl(NetworkConfig.P2P_BASE_URL);
+          }
+          status = await this.checkStatusRacingCancel(3000);
+          if (this.tapCancelled) {
+            return;
+          }
+        } else if (outcome.kind === 'lan') {
+          APIClient.getInstance().setBaseUrl(outcome.url);
+          status = outcome.status;
+        } else {
+          if (outcome.error !== undefined) {
+            throw new Error(ServerListViewModel.errorMessage(outcome.error));
+          }
+          this.showError(L10n.serverConnectFail);
+          return;
+        }
+      } else if (candidates.length > 0) {
+        // 仅直连（无配对码）：独立探测，胜者设为全局 baseUrl
+        if (!p2p.isReusableFor(pairCode) && !p2p.isConnectInFlightFor(pairCode)) {
+          p2p.disconnect();
+        }
+        for (const c of candidates) {
+          if (this.tapCancelled) {
+            return;
+          }
+          const s = await this.checkStatusAtRacingCancel(c.url, 2000);
+          if (this.tapCancelled) {
+            return;
+          }
+          if (s !== undefined && s.success && s.isNasCabServer
+            && (!c.requireServerIdMatch || this.matchServerId(s, server))) {
+            APIClient.getInstance().setBaseUrl(c.url);
+            status = s;
+            break;
+          }
+        }
+      } else if (hasPairCode) {
+        // 仅 P2P（无可用直连地址，如蜂窝网络 + 私有 IP）
         usingP2p = true;
-        // 重新评估：Phase 1 若已保留可复用/在建连接则不拆；
-        // 其余情况（不同配对码/已失效）清理后再建
-        const reusableNow = pairCode.length > 0 && p2p.isReusableFor(pairCode);
-        const inFlightNow = pairCode.length > 0 && p2p.isConnectInFlightFor(pairCode);
-        if (!reusableNow && !inFlightNow) {
-          P2PService.getInstance().disconnect();
+        if (p2p.isReusableFor(pairCode)) {
+          // 复用同码就绪连接，跳过断开与全量重建
+          if (!APIClient.getInstance().isP2pMode) {
+            APIClient.getInstance().setBaseUrl(NetworkConfig.P2P_BASE_URL);
+          }
+        } else {
+          // 同配对码建连进行中（如配对码添加流程）：不断开，经建连队列等待其完成后短路复用
+          if (!p2p.isConnectInFlightFor(pairCode)) {
+            p2p.disconnect();
+          }
+          await this.ensureP2pConnected(server);
+          if (this.tapCancelled) {
+            return;
+          }
+          if (!APIClient.getInstance().isP2pMode) {
+            APIClient.getInstance().setBaseUrl(NetworkConfig.P2P_BASE_URL);
+          }
         }
-        // 可复用/在建时 connectByPairCode 内部短路复用或排队等待在途建连
-        await this.ensureP2pConnected(server);
-        if (!APIClient.getInstance().isP2pMode) {
-          APIClient.getInstance().setBaseUrl(NetworkConfig.P2P_BASE_URL);
+        status = await this.checkStatusRacingCancel(3000);
+        if (this.tapCancelled) {
+          return;
         }
-        status = await this.authService.checkServerStatus(3000);
       }
 
       if (status === undefined || !status.success || !status.isNasCabServer) {
@@ -391,11 +552,178 @@ export class ServerListViewModel {
 
       await this.loginToServer(server, undefined, true);
     } catch (e) {
+      // 用户主动取消：静默收尾，不弹错误框（P2P 断连会抛 p2p_connect_stale 等）
+      if (this.tapCancelled) {
+        return;
+      }
       this.showError(L10n.serverStatusCheckFailedWithError(ServerListViewModel.errorMessage(e)));
     } finally {
       this.tapLocked = false;
+      this.tappingServer = undefined;
       this.isTapConnecting = false;
     }
+  }
+
+  /// LAN 探测与 P2P 建连并行竞速（对齐 Flutter handleServerTap Phase1+2 settle 逻辑）
+  private async raceLanAndP2p(server: ServerInfo, candidates: DirectCandidate[],
+    p2pReusable: boolean): Promise<TapRaceOutcome> {
+    const p2p = P2PService.getInstance();
+    const decided = new Deferred<TapRaceOutcome>();
+    let lanWinUrl = '';
+    let lanWinStatus: ServerStatusResponse | undefined = undefined;
+    let lanDone = false;
+    let p2pDone = p2pReusable;
+    let p2pFailed = false;
+    let p2pError: Object | undefined = undefined;
+    let p2pWon = false;
+
+    const settle = (): void => {
+      if (decided.isSettled) {
+        return;
+      }
+      if (lanWinUrl.length > 0) {
+        decided.resolve(new TapRaceOutcome('lan')); // LAN 命中即胜（可复用 P2P 保留，LAN 优先）
+      } else if (lanDone) {
+        // LAN 已结束且未命中：P2P 就绪则胜，双败则收尾
+        if (p2pReusable || (p2pDone && !p2pFailed)) {
+          p2pWon = true;
+          decided.resolve(new TapRaceOutcome('p2p'));
+        } else if (p2pDone && p2pFailed) {
+          decided.resolve(new TapRaceOutcome('fail'));
+        }
+      } else if (!p2pReusable && p2pDone && !p2pFailed) {
+        // LAN 尚未出结果而 P2P 先连上：谁先通用谁
+        p2pWon = true;
+        decided.resolve(new TapRaceOutcome('p2p'));
+      }
+    };
+
+    // LAN 探测任务：逐候选独立请求（800ms/个，失败不抛）
+    this.probeLanCandidates(server, candidates).then((hit: TapLanHit | undefined) => {
+      if (hit !== undefined) {
+        lanWinUrl = hit.url;
+        lanWinStatus = hit.status;
+      }
+      lanDone = true;
+      settle();
+    }).catch(() => {
+      lanDone = true;
+      settle();
+    });
+
+    // P2P 建连任务（已可复用则无需启动；在途同码经建连队列排队短路）
+    if (!p2pReusable) {
+      this.ensureP2pConnected(server).then(() => {
+        p2pFailed = !p2p.isConnected;
+        p2pDone = true;
+        settle();
+      }).catch((e: Object) => {
+        p2pError = e;
+        p2pFailed = true;
+        p2pDone = true;
+        settle();
+      });
+    } else {
+      settle();
+    }
+
+    const signal = this.tapCancelSignal;
+    const outcome = signal === undefined ? await decided.promise
+      : await Promise.race<TapRaceOutcome>([
+        decided.promise,
+        signal.promise.then((): TapRaceOutcome => new TapRaceOutcome('cancel'))
+      ]);
+
+    if (outcome.kind === 'cancel') {
+      return outcome;
+    }
+    if (p2pWon) {
+      outcome.kind = 'p2p';
+    } else if (lanWinUrl.length > 0) {
+      outcome.kind = 'lan';
+      outcome.url = lanWinUrl;
+      outcome.status = lanWinStatus;
+      // LAN 胜：作废在途 P2P 建连；已就绪的同码 P2P 连接保留，供后续复用
+      if (!p2p.isConnected) {
+        p2p.disconnect();
+      }
+    } else {
+      outcome.kind = 'fail';
+      outcome.error = p2pError;
+    }
+    return outcome;
+  }
+
+  /// 逐候选探测 LAN 直连（800ms/个），命中即返回
+  private async probeLanCandidates(server: ServerInfo,
+    candidates: DirectCandidate[]): Promise<TapLanHit | undefined> {
+    for (const c of candidates) {
+      if (this.tapCancelled) {
+        return undefined;
+      }
+      try {
+        const s = await this.authService.checkServerStatusAt(c.url, 800);
+        if (s.success && s.isNasCabServer && (!c.requireServerIdMatch || this.matchServerId(s, server))) {
+          return new TapLanHit(c.url, s);
+        }
+      } catch (_e) {
+        // 候选不可达，继续下一个
+      }
+    }
+    return undefined;
+  }
+
+  /// checkServerStatus 与取消信号竞速：取消后立即返回 undefined；
+  /// 对在途请求挂 catch 防止取消后失败成为未处理拒绝
+  private async checkStatusRacingCancel(timeoutMs: number): Promise<ServerStatusResponse | undefined> {
+    const work = this.authService.checkServerStatus(timeoutMs);
+    work.catch(() => {
+    });
+    const signal = this.tapCancelSignal;
+    if (signal === undefined) {
+      return work;
+    }
+    return Promise.race<ServerStatusResponse | undefined>([
+      work,
+      signal.promise.then((): undefined => undefined)
+    ]);
+  }
+
+  /// checkServerStatusAt 与取消信号竞速（用于仅直连分支）
+  private async checkStatusAtRacingCancel(url: string, timeoutMs: number): Promise<ServerStatusResponse | undefined> {
+    const work = this.authService.checkServerStatusAt(url, timeoutMs);
+    work.catch(() => {
+    });
+    const signal = this.tapCancelSignal;
+    if (signal === undefined) {
+      return work;
+    }
+    return Promise.race<ServerStatusResponse | undefined>([
+      work,
+      signal.promise.then((): undefined => undefined)
+    ]);
+  }
+
+  /// 取消本次登录：置取消标志、放行各等待点，并作废在途 P2P 建连。
+  /// 仅当 P2P 与本次登录相关（在途建连或当前正走 P2P）时才断开，避免误伤其他连接
+  cancelTap(): void {
+    if (this.tapCancelled) {
+      return;
+    }
+    this.tapCancelled = true;
+    const signal = this.tapCancelSignal;
+    if (signal !== undefined) {
+      signal.resolve();
+    }
+    const server = this.tappingServer;
+    const p2p = P2PService.getInstance();
+    if (server !== undefined && server.hasPairCode()) {
+      const code = (server.pairCode ?? '').trim();
+      if (p2p.isConnectInFlightFor(code) || APIClient.getInstance().isP2pMode) {
+        p2p.disconnect();
+      }
+    }
+    this.isTapConnecting = false;
   }
 
   /// 从 ServerInfo 解析 HTTP 端口（优先 httpPort，其次 httpsPort，默认 9000）
@@ -448,15 +776,103 @@ export class ServerListViewModel {
     }
   }
 
-  /// 处理菜单选择
+  /// 处理菜单选择（对齐 Flutter PopupMenu 项）
   handleMenuSelection(action: string, serverItem: ServerInfo): void {
     if (action === 'edit_pair_code') {
       this.showEditPairCodeDialog(serverItem);
     } else if (action === 'edit') {
       this.goToAddServerView(serverItem);
+    } else if (action === 'remote_pref') {
+      this.showRemoteConnectPref(serverItem);
+    } else if (action === 'move_to_top') {
+      void this.moveServerToTop(serverItem);
+    } else if (action === 'toggle_auto_login') {
+      void this.toggleAutoLogin(serverItem);
     } else if (action === 'delete') {
       this.showDeleteConfirmDialog(serverItem);
     }
+  }
+
+  /// 远程连接偏好设置：直连优先 / 中继优先（对齐 Flutter showRemoteConnectPref）
+  /// 偏好随服务器条目持久化，此后所有 null 偏好建连（点击服务器、自动重连、Failover）
+  /// 都会在 connectByPairCode 入口按此偏好解析；若当前正以 P2P 连接该服务器，则立即按新偏好断开重建
+  private showRemoteConnectPref(serverItem: ServerInfo): void {
+    const code = (serverItem.pairCode ?? '').trim();
+    if (code.length === 0) {
+      return;
+    }
+    this.remotePrefDialog.show(serverItem.p2pRelayPreferred, (relayPreferred: boolean) => {
+      // 未改变选择：仅关窗返回
+      if (relayPreferred === serverItem.p2pRelayPreferred) {
+        return;
+      }
+      serverItem.p2pRelayPreferred = relayPreferred;
+      void this.applyRemotePrefChange(serverItem, code, relayPreferred);
+    });
+  }
+
+  private async applyRemotePrefChange(serverItem: ServerInfo, code: string,
+    relayPreferred: boolean): Promise<void> {
+    // 1) 在已保存列表中按身份定位更新，然后整体落盘并刷新 UI
+    try {
+      const saved = ServerStorageService.getInstance().loadServers();
+      let persisted = false;
+      for (const s of saved) {
+        if (this.isSameIdentity(s, serverItem)) {
+          s.p2pRelayPreferred = relayPreferred;
+          persisted = true;
+          break;
+        }
+      }
+      if (persisted) {
+        await ServerStorageService.getInstance().saveServers(saved);
+      }
+    } catch (_e) {
+    }
+    await this.refreshSavedServers();
+
+    // 2) 当前正以 P2P 连接该服务器：立即按新偏好断开重建（同码就绪连接会被短路复用，必须先断开）
+    const api = APIClient.getInstance();
+    const p2p = P2PService.getInstance();
+    if (api.isP2pMode && p2p.pairCode.trim() === code) {
+      try {
+        await p2p.disconnect();
+        await p2p.connectByPairCode(code,
+          relayPreferred ? P2pIcePreference.RELAY_ONLY : P2pIcePreference.AUTO);
+      } catch (_e) {
+        // 重建期间瞬时失败属预期
+      }
+    }
+  }
+
+  /// 移动到列表顶部（对齐 Flutter server_menu_move_to_top）
+  private async moveServerToTop(serverItem: ServerInfo): Promise<void> {
+    const list = this.savedServers.slice();
+    const idx = list.findIndex((s: ServerInfo) => this.isSameIdentity(s, serverItem));
+    if (idx <= 0) {
+      return;
+    }
+    const target = list.splice(idx, 1)[0];
+    list.unshift(target);
+    await ServerStorageService.getInstance().saveServers(list);
+    await this.refreshSavedServers();
+  }
+
+  /// 启动时自动登录开关（全局互斥：开启一台会关闭其他所有，对齐 Flutter）
+  private async toggleAutoLogin(serverItem: ServerInfo): Promise<void> {
+    const enable = !serverItem.autoLoginOnStartup;
+    const list = this.savedServers;
+    for (const s of list) {
+      const same = this.isSameIdentity(s, serverItem);
+      if (same) {
+        s.autoLoginOnStartup = enable;
+      } else if (enable) {
+        // 全局互斥：开启一台时关闭其他所有
+        s.autoLoginOnStartup = false;
+      }
+    }
+    await ServerStorageService.getInstance().saveServers(list);
+    await this.refreshSavedServers();
   }
 
   private showEditPairCodeDialog(serverItem: ServerInfo): void {
@@ -670,6 +1086,11 @@ export class ServerListViewModel {
     await this.refreshSavedServers();
 
     this.authService.applyLoginSuccess(serverItem, loginResult);
+
+    // 登录成功且当前走 P2P 时，后台探测直连并尝试从中继无缝升级为直连（提升连接效率）
+    if (APIClient.getInstance().isP2pMode) {
+      ConnectChannelManager.scheduleP2pDirectUpgrade();
+    }
 
     await this.stopUdpListening();
     this.onLoginSuccess();

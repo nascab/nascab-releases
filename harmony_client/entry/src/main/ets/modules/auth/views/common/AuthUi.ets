@@ -136,6 +136,26 @@ export class TwofaDialogState {
   }
 }
 
+/** 远程连接偏好选择对话框状态（对齐 Flutter _buildRemoteConnectPrefDialog） */
+@ObservedV2
+export class RemotePrefDialogState {
+  @Trace visible: boolean = false;
+  /** true=P2P中继优先，false=P2P直连优先 */
+  @Trace relayPreferred: boolean = false;
+  onSelect: (relayPreferred: boolean) => void = (_v: boolean) => {
+  };
+
+  show(relayPreferred: boolean, onSelect: (relayPreferred: boolean) => void): void {
+    this.relayPreferred = relayPreferred;
+    this.onSelect = onSelect;
+    this.visible = true;
+  }
+
+  close(): void {
+    this.visible = false;
+  }
+}
+
 /**
  * 认证页面头部，对应 Flutter CustomAuthHeader。
  * 结构：返回按钮（可选）+ 图标（可选，无 logo）+ 标题/副标题 + 右侧操作，底部带分割线。
@@ -468,6 +488,84 @@ export struct TwofaDialogView {
         DialogTextButton({ label: L10n.auth2faVerifyButton, action: () => this.verify() })
       }
       .margin({ top: 20 })
+      .justifyContent(FlexAlign.End)
+      .width('100%')
+    }
+    .width('80%')
+    .constraintSize({ maxWidth: 400 })
+    .padding(20)
+    .borderRadius(12)
+    .backgroundColor(AuthTheme.dialogBg)
+  }
+}
+
+/** 远程连接偏好选择对话框渲染（对齐 Flutter _buildRemoteConnectPrefDialog） */
+@ComponentV2
+export struct RemotePrefDialogView {
+  @Param state: RemotePrefDialogState = new RemotePrefDialogState();
+
+  @Builder
+  OptionRow(relay: boolean, selected: boolean, title: string, desc: string) {
+    Row({ space: 12 }) {
+      // 单选指示器：选中时内圈填充主色
+      Stack() {
+        Circle()
+          .width(20)
+          .height(20)
+          .stroke(AuthTheme.textSecondary)
+          .strokeWidth(2)
+          .fill(Color.Transparent)
+        if (selected) {
+          Circle()
+            .width(10)
+            .height(10)
+            .fill(AuthTheme.primary)
+        }
+      }
+      Column({ space: 4 }) {
+        Text(title)
+          .fontSize(15)
+          .fontColor(AuthTheme.textMain)
+          .width('100%')
+        Text(desc)
+          .fontSize(12)
+          .fontColor(AuthTheme.textSecondary)
+          .width('100%')
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.state.close();
+      this.state.onSelect(relay);
+    })
+  }
+
+  build() {
+    Column() {
+      // 标题：偏好名称 + 绑定内解析提示（对齐 Flutter SimpleDialog 标题拼接）
+      Text(`${L10n.serverRemoteConnectPref}${L10n.remotePrefPairCodeHint}`)
+        .fontSize(17)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(AuthTheme.textMain)
+        .width('100%')
+
+      // 在 build() 中显式读取 @Trace 字段，确保选中态变化时触发重渲染
+      this.OptionRow(false, this.state.relayPreferred === false,
+        L10n.remotePrefDirectFirst, L10n.remotePrefDirectFirstDesc)
+      this.OptionRow(true, this.state.relayPreferred === true,
+        L10n.remotePrefRelayFirst, L10n.remotePrefRelayFirstDesc)
+
+      Row({ space: 12 }) {
+        DialogTextButton({
+          label: L10n.cancel,
+          action: () => this.state.close()
+        })
+      }
+      .margin({ top: 8 })
       .justifyContent(FlexAlign.End)
       .width('100%')
     }

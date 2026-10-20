@@ -24,6 +24,10 @@ export class ServerInfo {
   accessToken?: string;
   refreshToken?: string;
   lastLoginTime?: number;
+  /** 服务器级「远程连接偏好」：是否 P2P 中继优先（false=P2P 直连优先，默认）。对齐 Flutter ServerInfoBean.p2pRelayPreferred */
+  p2pRelayPreferred: boolean = false;
+  /** 启动时自动登录（所有服务器全局互斥，同一时间仅一个可为 true）。对齐 Flutter ServerInfoBean.autoLoginOnStartup */
+  autoLoginOnStartup: boolean = false;
 
   hasPairCode(): boolean {
     return (this.pairCode ?? '').trim().length > 0;
@@ -114,6 +118,9 @@ export class ServerInfo {
     out.accessToken = pick(incoming.accessToken, existing.accessToken);
     out.refreshToken = pick(incoming.refreshToken, existing.refreshToken);
     out.lastLoginTime = incoming.lastLoginTime ?? existing.lastLoginTime;
+    // 偏好类开关按 OR 合并，避免登录回写时把用户已开启的偏好覆盖为 false
+    out.p2pRelayPreferred = existing.p2pRelayPreferred || incoming.p2pRelayPreferred;
+    out.autoLoginOnStartup = existing.autoLoginOnStartup || incoming.autoLoginOnStartup;
     out.isP2p = out.serverUrl.trim().length === 0 && (out.pairCode ?? '').trim().length > 0;
     return out;
   }
@@ -155,6 +162,8 @@ export class ServerInfo {
     s.requirePasswordEveryLogin = m.requirePasswordEveryLogin === true || m.needInputPwdEveryTime === true;
     s.accessToken = m.accessToken;
     s.refreshToken = m.refreshToken;
+    s.p2pRelayPreferred = m.p2pRelayPreferred === true;
+    s.autoLoginOnStartup = m.autoLoginOnStartup === true;
     if (m.lastLoginTime !== undefined) {
       s.lastLoginTime = Number(m.lastLoginTime);
     }
@@ -175,6 +184,8 @@ export class ServerInfo {
     obj.isLocalServer = this.isLocalServer;
     obj.isP2p = this.isP2p;
     obj.requirePasswordEveryLogin = this.requirePasswordEveryLogin;
+    obj.p2pRelayPreferred = this.p2pRelayPreferred;
+    obj.autoLoginOnStartup = this.autoLoginOnStartup;
     obj.userInputUrl = this.userInputUrl;
     obj.lanIpv4 = this.lanIpv4;
     obj.lanHttpPort = this.lanHttpPort;

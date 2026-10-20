@@ -160,6 +160,8 @@ export class ServerInfoJson {
   accessToken?: string;
   refreshToken?: string;
   lastLoginTime?: number;
+  p2pRelayPreferred?: boolean;
+  autoLoginOnStartup?: boolean;
 }
 
 export class P2pControlPayload {

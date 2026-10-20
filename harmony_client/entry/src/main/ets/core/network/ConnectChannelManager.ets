@@ -6,7 +6,7 @@ import { CacheKeys } from '../storage/CacheKeys';
 import { ServerStorageService } from '../storage/ServerStorageService';
 import { ServerInfo } from '../../modules/auth/models/ServerInfo';
 import { P2PService } from '../../p2p/P2PService';
-import { P2pIcePreference } from '../../p2p/P2pProtocol';
+import { P2pIcePreference, P2pTransportKind } from '../../p2p/P2pProtocol';
 import { DevConnectMode, DevConnectModeUtil } from './DevConnectMode';
 import { HeaderMap } from '../../common/HeaderMap';
 
@@ -32,6 +32,32 @@ export class ConnectChannelManager {
       // 持久化失败不阻断切换（对齐 Flutter try/catch）
     }
     await ConnectChannelManager.applyNow(mode);
+  }
+
+  /** 登录成功后调用：若当前走 P2P 中继，延迟后台探测直连并尝试无缝升级为直连
+   *  （对齐 Flutter scheduleP2pDirectUpgrade → _runP2pAutoSwitchProbe） */
+  static scheduleP2pDirectUpgrade(): void {
+    // 连接成功后约 800ms 才会异步确认 transport kind，延迟 1500ms 确保中继状态已就绪
+    setTimeout((): void => {
+      void ConnectChannelManager.runDirectUpgradeProbe();
+    }, 1500);
+  }
+
+  private static async runDirectUpgradeProbe(): Promise<void> {
+    const api = APIClient.getInstance();
+    // 仅在中继模式下才尝试升级；已是直连（含非 P2P 直连）则无需处理
+    if (!api.isP2pMode || P2PService.getInstance().transportKind !== P2pTransportKind.RELAY) {
+      return;
+    }
+    const info = ConnectChannelManager.loadServerInfo();
+    if (info === undefined) {
+      return;
+    }
+    try {
+      await ConnectChannelManager.switchToDirect(info);
+    } catch (_e) {
+      // 升级失败保持中继，不打扰用户
+    }
   }
 
   /** 当前模式立即生效（对齐 applyDevConnectModeNow） */

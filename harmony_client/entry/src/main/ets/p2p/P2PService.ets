@@ -4,6 +4,7 @@ import { APIClient, HttpMethod, HttpResult, P2pRequestSender } from '../core/net
 import { NetworkConfig } from '../core/network/NetworkConfig';
 import { PreferencesStore } from '../core/storage/PreferencesStore';
 import { CacheKeys } from '../core/storage/CacheKeys';
+import { ServerStorageService } from '../core/storage/ServerStorageService';
 import { ApiEnvelope, JsonCodec, P2pSessionJson } from '../common/JsonTypes';
 import { HeaderMap } from '../common/HeaderMap';
 import { WebSocketSignaling, WebSocketSignalingDelegate } from './WebSocketSignaling';
@@ -128,8 +129,13 @@ export class P2PService implements P2pRequestSender {
     return P2PService.instance;
   }
 
-  async connectByPairCode(code: string, icePreference: P2pIcePreference = P2pIcePreference.AUTO): Promise<void> {
-    this.icePreference = icePreference;
+  async connectByPairCode(code: string, icePreference?: P2pIcePreference): Promise<void> {
+    // 未显式传偏好（点击服务器/配对码添加/自动重连/Failover 等 null 入口）：
+    // 按已保存服务器的远程连接偏好解析（中继优先→relayOnly，否则 auto）。
+    // 显式传偏好（开发者通道切换、中继→直连升级探测）不经过此分支。
+    const resolved = icePreference ?? (this.isRelayPreferredForPairCode(code)
+      ? P2pIcePreference.RELAY_ONLY : P2pIcePreference.AUTO);
+    this.icePreference = resolved;
     while (this.connectSerialPromise) {
       // 排队等待前一次建连结束，但吞掉其错误：
       // 排队方不继承前次失败，由本次按自己的参数重新评估（可短路复用）
@@ -138,13 +144,35 @@ export class P2PService implements P2pRequestSender {
     }
     const trimmed = code.trim();
     this.inFlightCode = trimmed;
-    this.connectSerialPromise = this.connectByPairCodeBody(trimmed, icePreference);
+    this.connectSerialPromise = this.connectByPairCodeBody(trimmed, resolved);
     try {
       await this.connectSerialPromise;
     } finally {
       this.connectSerialPromise = undefined;
       this.inFlightCode = '';
     }
+  }
+
+  /** 按配对码查询服务器级「远程连接偏好」是否中继优先（对齐 Flutter _isP2pRelayPreferredForPairCode） */
+  private isRelayPreferredForPairCode(code: string): boolean {
+    const target = code.trim();
+    if (target.length === 0) {
+      return false;
+    }
+    try {
+      const all = ServerStorageService.getInstance().loadServers();
+      for (const s of all) {
+        if ((s.pairCode ?? '').trim() !== target) {
+          continue;
+        }
+        if (s.p2pRelayPreferred) {
+          return true;
+        }
+      }
+    } catch (_e) {
+      // 读取失败按默认（直连优先）处理
+    }
+    return false;
   }
 
   private async connectByPairCodeBody(code: string, requestedPref: P2pIcePreference): Promise<void> {
@@ -410,7 +438,7 @@ export class P2PService implements P2pRequestSender {
     this.connectionState = P2PConnectionState.RECONNECTING;
     this.reconnectTimerId = setTimeout(() => {
       this.reconnectTimerId = -1;
-      this.connectByPairCode(this.pairCode, this.icePreference).then(() => {
+      this.connectByPairCode(this.pairCode).then(() => {
         this.reconnectAttempts = 0;
       }).catch(() => {
         this.scheduleReconnect();
