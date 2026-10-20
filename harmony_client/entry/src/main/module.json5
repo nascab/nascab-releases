@@ -46,15 +46,16 @@
           "when": "inuse"
         }
       },
-      // TODO(acl 审批通过后恢复)：READ_IMAGEVIDEO 为受限权限，需 ACL 审批通过后才能安装
-      // {
-      //   "name": "ohos.permission.READ_IMAGEVIDEO",
-      //   "reason": "$string:permission_read_imagevideo_reason",
-      //   "usedScene": {
-      //     "abilities": ["EntryAbility"],
-      //     "when": "inuse"
-      //   }
-      // }
+      // READ_IMAGEVIDEO：受限开放权限（相册备份需读取媒体库），需 AGC ACL 审批通过、
+      // 且签名 profile 的 acls.allowed-acls 中包含该权限后才能安装（否则报 9568289）
+      {
+        "name": "ohos.permission.READ_IMAGEVIDEO",
+        "reason": "$string:permission_read_imagevideo_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
+      }
     ],
     "abilities": [
       {

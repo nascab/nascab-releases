@@ -1,4 +1,5 @@
 import { L10n } from '../../../core/localization/L10n';
+import { image } from '@kit.ImageKit';
 import { AppTheme, ThemePalette } from '../../../core/theme/AppTheme';
 import { AppEventBus } from '../../../common/AppEventBus';
 import { LanguageService } from '../../../core/localization/LanguageService';
@@ -6,6 +7,12 @@ import { PageScaffold } from '../../../common/PageScaffold';
 import { PhotoAlbumService } from '../services/PhotoAlbumService';
 import { PhotoAlbumInfo } from '../models/PhotoBackupModels';
 import { PhotoBackupAlbumPickerPageParam } from '../router/PhotoBackupRoutes';
+
+/** 相册卡片宽高比（宽/高，对齐 Flutter 网格 childAspectRatio） */
+const TILE_ASPECT_RATIO = 0.78;
+/** 网格内边距与列间距（与 Grid 样式保持一致） */
+const GRID_PADDING = 24;
+const GRID_GAP = 10;
 
 /**
  * 相册选择页（对齐 Flutter showPhotoBackupAlbumPicker / _PhotoBackupAlbumPickerPage）：
@@ -20,8 +27,8 @@ export struct PhotoBackupAlbumPickerPage {
   @Local loading: boolean = true;
   @Local errorText: string = '';
   @Local albums: PhotoAlbumInfo[] = [];
-  /** 封面加载失败的相册 id 集合（降级为占位图标） */
-  @Local brokenCovers: Set<string> = new Set<string>();
+  /** 相册卡片高度（按容器宽度与 2 列栅格计算，避免 GridItem 被内容撑满整屏） */
+  @Local tileHeight: number = 160;
   /** 依赖 localeBump：切换语言后触发整页刷新 */
   @Local localeBump: number = 0;
   private localeListener: (data: string) => void = (_data: string): void => {
@@ -111,29 +118,30 @@ export struct PhotoBackupAlbumPickerPage {
             GridItem() {
               AlbumGridTile({
                 album: album,
-                broken: this.brokenCovers.has(album.id),
                 onPick: (): void => {
                   this.param.onPicked(album);
                   this.popPage();
-                },
-                onCoverBroken: (): void => {
-                  const next = new Set<string>(this.brokenCovers);
-                  next.add(album.id);
-                  this.brokenCovers = next;
                 }
               })
             }
-          }, (album: PhotoAlbumInfo): string => `${album.id}_${album.name.length}_${album.count}`
-            + `_${this.brokenCovers.has(album.id)}_${this.localeBump}`)
+            .height(this.tileHeight)
+          }, (album: PhotoAlbumInfo): string => `${album.id}_${album.name}_${album.count}_${this.localeBump}`)
         }
         .columnsTemplate('1fr 1fr')
-        .columnsGap(10)
-        .rowsGap(10)
+        .columnsGap(GRID_GAP)
+        .rowsGap(GRID_GAP)
         .padding({ left: 12, right: 12, top: 8, bottom: 24 })
         .width('100%')
         .height('100%')
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
+        .onAreaChange((_old: Area, newVal: Area) => {
+          const width = newVal.width as number;
+          const colWidth = (width - GRID_PADDING - GRID_GAP) / 2;
+          if (colWidth > 0) {
+            this.tileHeight = colWidth / TILE_ASPECT_RATIO;
+          }
+        })
       }
     }
     .width('100%')
@@ -147,10 +155,7 @@ export struct PhotoBackupAlbumPickerPage {
 @ComponentV2
 struct AlbumGridTile {
   @Require @Param album: PhotoAlbumInfo;
-  @Param broken: boolean = false;
   @Param onPick: () => void = (): void => {
-  };
-  @Param onCoverBroken: () => void = (): void => {
   };
 
   private palette(): ThemePalette {
@@ -159,31 +164,10 @@ struct AlbumGridTile {
 
   build() {
     Column() {
-      // 封面区（占满剩余空间；封面缺失/加载失败时显示占位图标）
-      Stack() {
-        if (!this.broken && this.album.coverUri.length > 0) {
-          Image(this.album.coverUri)
-            .objectFit(ImageFit.Cover)
-            .width('100%')
-            .height('100%')
-            .onError((): void => {
-              this.onCoverBroken();
-            })
-        } else {
-          Column() {
-            SymbolGlyph($r('sys.symbol.picture'))
-              .fontSize(40)
-              .fontColor([this.palette().hint])
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
-          .backgroundColor(this.palette().inputFill)
-        }
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .clip(true)
+      // 封面区（占满剩余空间；封面未就绪时显示占位图标）
+      AlbumCover({ albumUri: this.album.id })
+        .width('100%')
+        .layoutWeight(1)
 
       // 信息区：名称 + 数量
       Column({ space: 2 }) {
@@ -191,7 +175,7 @@ struct AlbumGridTile {
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.palette().onSurface)
-          .maxLines(2)
+          .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
         Text(`${this.album.count}`)
@@ -212,5 +196,72 @@ struct AlbumGridTile {
     .onClick((): void => {
       this.onPick();
     })
+  }
+}
+
+/**
+ * 相册封面：通过 asset.getThumbnail 取缩略图 PixelMap。
+ * 不能直接把 album.coverUri 交给 Image —— 视频相册的 coverUri 指向视频文件，解码必然失败。
+ */
+@ComponentV2
+struct AlbumCover {
+  @Param albumUri: string = '';
+  @Local pixelMap: image.PixelMap | undefined = undefined;
+  private disposed: boolean = false;
+
+  private palette(): ThemePalette {
+    return AppTheme.current();
+  }
+
+  aboutToAppear(): void {
+    void this.load();
+  }
+
+  aboutToDisappear(): void {
+    this.disposed = true;
+    const pm = this.pixelMap;
+    this.pixelMap = undefined;
+    if (pm !== undefined) {
+      void pm.release();
+    }
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const pm = await PhotoAlbumService.loadAlbumCover(this.albumUri, 320);
+      if (this.disposed) {
+        if (pm !== undefined) {
+          await pm.release();
+        }
+        return;
+      }
+      this.pixelMap = pm;
+    } catch (_e) {
+      // 保持占位
+    }
+  }
+
+  build() {
+    Stack() {
+      if (this.pixelMap !== undefined) {
+        Image(this.pixelMap)
+          .objectFit(ImageFit.Cover)
+          .width('100%')
+          .height('100%')
+      } else {
+        Column() {
+          SymbolGlyph($r('sys.symbol.picture'))
+            .fontSize(36)
+            .fontColor([this.palette().hint])
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(this.palette().inputFill)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .clip(true)
   }
 }

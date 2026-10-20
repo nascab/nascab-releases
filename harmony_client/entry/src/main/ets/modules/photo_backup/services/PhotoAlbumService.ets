@@ -1,9 +1,10 @@
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { dataSharePredicates } from '@kit.ArkData';
-import { abilityAccessCtrl } from '@kit.AbilityKit';
+import { image } from '@kit.ImageKit';
+import { abilityAccessCtrl, Want } from '@kit.AbilityKit';
 import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { WindowStore } from '../../../common/WindowStore';
-import { ToastUtil } from '../../../common/ToastUtil';
+import { DialogUtil } from '../../../common/DialogUtil';
 import { L10n } from '../../../core/localization/L10n';
 import { UploadTransferHelper } from '../../transfer/utils/UploadTransferHelper';
 import {
@@ -19,6 +20,8 @@ const STREAM_PAGE_SIZE = 80;
 const META_PAGE_SIZE = 500;
 /** 实况视频导出超时（毫秒） */
 const LIVE_EXPORT_TIMEOUT_MS = 60000;
+/** 应用包名（权限被拒后跳转系统设置「应用详情」页需要） */
+const BUNDLE_NAME = 'com.nascabos.hongmeng';
 
 /** 实况照片视频轨导出结果 */
 class LiveVideoExport {
@@ -74,6 +77,9 @@ class MovingPhotoDataHandler implements photoAccessHelper.MediaAssetDataHandler<
  */
 export class PhotoAlbumService {
   private static helper: photoAccessHelper.PhotoAccessHelper | undefined = undefined;
+  /** albumUri → Album 引用（供封面按需取缩略图，避免重复枚举相册） */
+  private static albumRefs: Map<string, photoAccessHelper.Album> =
+    new Map<string, photoAccessHelper.Album>();
 
   private static readonly FETCH_COLUMNS: string[] = [
     photoAccessHelper.PhotoKeys.DISPLAY_NAME,
@@ -113,14 +119,44 @@ export class PhotoAlbumService {
 
   /**
    * 扫描前确保权限（对齐 Flutter _ensurePhotoPermission）：
-   * 未授权时 toast 引导，与相册枚举同源判断。
+   * 未授权时弹窗引导用户前往系统设置，与相册枚举同源判断。
    */
   static async ensurePermission(): Promise<boolean> {
     const ok = await PhotoAlbumService.requestPermission();
     if (!ok) {
-      ToastUtil.show(L10n.t('photo_library_permission_missing', '未获得相册访问权限'));
+      PhotoAlbumService.showPermissionGuide();
     }
     return ok;
+  }
+
+  /** 权限被拒时的引导弹窗：确认则跳转系统设置应用详情页（对齐 Flutter openAppSettings） */
+  static showPermissionGuide(): void {
+    void DialogUtil.showConfirmDialog(
+      L10n.t('photo_backup_album_permission_guide_title', '需要相册权限'),
+      L10n.t('photo_backup_album_permission_guide_content',
+        '请在系统设置中允许本应用访问相册，以便选择要备份的相册。'),
+      (): void => {
+        PhotoAlbumService.openAppSettings();
+      },
+      L10n.t('open_settings', '打开设置'),
+      L10n.cancel);
+  }
+
+  /** 跳转系统设置的「应用详情」页（用户可在此开启相册权限） */
+  static openAppSettings(): void {
+    const ctx = WindowStore.appContext;
+    if (!ctx) {
+      return;
+    }
+    const want: Want = {
+      bundleName: 'com.huawei.hmos.settings',
+      abilityName: 'com.huawei.hmos.settings.MainAbility',
+      uri: 'application_info_entry',
+      parameters: { pushParams: BUNDLE_NAME }
+    };
+    void ctx.startAbility(want).catch((e: Object): void => {
+      console.warn('[PhotoBackup] 打开系统设置失败: ' + `${e}`);
+    });
   }
 
   // ============================================================
@@ -172,16 +208,71 @@ export class PhotoAlbumService {
         if (id.length === 0 || seen.has(id)) {
           continue;
         }
+        // 空相册无意义（系统相册为空时 name/coverUri 也为空），直接跳过
+        if (album.count <= 0) {
+          continue;
+        }
         seen.add(id);
+        PhotoAlbumService.albumRefs.set(id, album);
         const info = new PhotoAlbumInfo();
         info.id = id;
-        info.name = album.albumName;
+        info.name = PhotoAlbumService.displayNameOf(album);
         info.count = album.count;
         info.coverUri = album.coverUri;
         out.push(info);
       }
     }
     return out;
+  }
+
+  /** 相册显示名：系统相册（图片/视频/收藏）的 albumName 可能为空，按 subtype 补本地化名称 */
+  private static displayNameOf(album: photoAccessHelper.Album): string {
+    const raw = album.albumName ?? '';
+    if (raw.trim().length > 0) {
+      return raw.trim();
+    }
+    if (album.albumSubtype === photoAccessHelper.AlbumSubtype.FAVORITE) {
+      return L10n.t('photo_album_system_favorite', '收藏');
+    }
+    if (album.albumSubtype === photoAccessHelper.AlbumSubtype.VIDEO) {
+      return L10n.t('photo_album_system_video', '视频');
+    }
+    if (album.albumSubtype === photoAccessHelper.AlbumSubtype.IMAGE) {
+      return L10n.t('photo_album_system_image', '图片');
+    }
+    return L10n.t('photo_album_system_any', '全部');
+  }
+
+  /**
+   * 取相册封面缩略图（PixelMap）。
+   * 不能直接用 album.coverUri 给 Image：视频相册的 coverUri 指向视频文件，Image 解码会失败
+   * （日志 [ImageSource] failed to create decoder object / image source data is incorrect）。
+   */
+  static async loadAlbumCover(albumUri: string, size: number): Promise<image.PixelMap | undefined> {
+    let album = PhotoAlbumService.albumRefs.get(albumUri);
+    if (album === undefined) {
+      album = await PhotoAlbumService.findAlbum(albumUri);
+      if (album !== undefined) {
+        PhotoAlbumService.albumRefs.set(albumUri, album);
+      }
+    }
+    if (album === undefined || album.count <= 0) {
+      return undefined;
+    }
+    const options: photoAccessHelper.FetchOptions = {
+      fetchColumns: [photoAccessHelper.PhotoKeys.DISPLAY_NAME],
+      predicates: new dataSharePredicates.DataSharePredicates()
+    };
+    const res = await album.getAssets(options);
+    try {
+      const assets = await res.getAllObjects();
+      if (assets.length === 0) {
+        return undefined;
+      }
+      return await assets[0].getThumbnail({ width: size, height: size });
+    } finally {
+      res.close();
+    }
   }
 
   /** 按 albumUri 查找相册（对齐 Flutter firstWhereOrNull((e) => e.id == task.sourceId)） */
