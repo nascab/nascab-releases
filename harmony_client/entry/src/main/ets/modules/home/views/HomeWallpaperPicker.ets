@@ -69,6 +69,8 @@ export struct HomeWallpaperPicker {
   /** 应用壁纸成功后的回调（用于刷新首页壁纸背景） */
   @Param onApplied: () => void = () => {
   };
+  /** 状态栏高度（vp）：全屏覆盖层，内容需避让状态栏 */
+  @Param statusBarHeight: number = 0;
   @Local wallpapers: WallpaperItemJson[] = [];
   @Local mode: string = 'fixed';
   @Local selectedName: string = '';
@@ -491,6 +493,8 @@ export struct HomeWallpaperPicker {
     .height('100%')
     .backgroundColor('#1A1A2E')
     .alignItems(HorizontalAlign.Start)
+    // 全屏覆盖层：避让状态栏，避免标题与状态栏重合
+    .padding({ top: this.statusBarHeight })
   }
 
   private columnsTemplate(): string {

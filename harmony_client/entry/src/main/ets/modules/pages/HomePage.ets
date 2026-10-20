@@ -279,6 +279,7 @@ export struct HomePage {
 
       if (this.showWallpaperPicker) {
         HomeWallpaperPicker({
+          statusBarHeight: this.statusBarHeight,
           onDismiss: () => {
             this.showWallpaperPicker = false;
           },
