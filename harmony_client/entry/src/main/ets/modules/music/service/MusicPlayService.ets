@@ -1366,8 +1366,10 @@ export class MusicPlayService {
     this.positionMs = this.engine.getCurrentPosition();
     this.bufferedMs = this.engine.getBuffered();
     const playing = this.engine.isPlaying();
-    let completed = false;
-    if (d > 0) {
+    // 优先使用播放器自身的 completed 状态（对齐 Flutter 适配器 isCompleted）；
+    // AVPlayer 进入 completed 后 currentTime 可能被重置，仅靠位置检测会漏判
+    let completed = this.engine.isCompleted();
+    if (!completed && d > 0) {
       const posMs = this.positionMs;
       if (posMs >= d - 500 && !playing && !this.engine.isBuffering() && this.desiredPlaying) {
         completed = true;

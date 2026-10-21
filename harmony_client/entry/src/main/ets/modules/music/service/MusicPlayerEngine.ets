@@ -37,6 +37,8 @@ export class MusicPlayerEngine {
   private lastLooping: boolean = false;
   private buffering: boolean = false;
   private playing: boolean = false;
+  /** 播放器已完成标志（对齐 Flutter 适配器 isCompleted） */
+  private completed: boolean = false;
   /** prepared 前暂存的 seek */
   private pendingSeekMs: number = -1;
   private autoPlay: boolean = true;
@@ -71,6 +73,8 @@ export class MusicPlayerEngine {
           try {
             player.setVolume(this.lastVolume);
             player.loop = this.lastLooping;
+            hilog.info(0x0000, TAG, 'state prepared, loop=%{public}s, duration=%{public}d',
+              `${this.lastLooping}`, this.durationMs);
           } catch (_e) {
             // 忽略设置失败
           }
@@ -95,6 +99,8 @@ export class MusicPlayerEngine {
           break;
         case 'completed':
           this.playing = false;
+          this.completed = true;
+          hilog.info(0x0000, TAG, 'state completed, loop=%{public}s', `${this.lastLooping}`);
           this.cb.onCompleted?.();
           break;
         default:
@@ -182,6 +188,7 @@ export class MusicPlayerEngine {
     this.prepared = false;
     this.durationMs = 0;
     this.playing = false;
+    this.completed = false;
     this.setBuffering(false);
     this.pendingSeekMs = startMs > 0 ? startMs : -1;
     this.autoPlay = autoPlay;
@@ -209,7 +216,12 @@ export class MusicPlayerEngine {
     if (player === null) {
       return;
     }
-    if (player.state === 'paused' || player.state === 'prepared') {
+    const state = player.state;
+    if (state === 'completed') {
+      // completed 状态下 play() 会从头重播，清除完成标志
+      this.completed = false;
+    }
+    if (state === 'paused' || state === 'prepared' || state === 'completed') {
       player.play().catch((e: Object): void => {
         this.notifyError(`play failed: ${JSON.stringify(e)}`);
       });
@@ -239,6 +251,11 @@ export class MusicPlayerEngine {
     return this.prepared;
   }
 
+  /** 是否已播放完成（对齐 Flutter 适配器 isCompleted） */
+  isCompleted(): boolean {
+    return this.completed;
+  }
+
   seekTo(ms: number): void {
     if (this.avPlayer === null) {
       return;
@@ -255,6 +272,8 @@ export class MusicPlayerEngine {
     if (player === null) {
       return;
     }
+    // 完成态下 seek 视为重新定位，清除完成标志，避免轮询重复判定完成
+    this.completed = false;
     player.seek(Math.max(0, ms), media.SeekMode.SEEK_PREV_SYNC);
   }
 
@@ -301,6 +320,7 @@ export class MusicPlayerEngine {
     this.released = true;
     this.playing = false;
     this.prepared = false;
+    this.completed = false;
     const player = this.avPlayer;
     this.avPlayer = null;
     if (player !== null) {
