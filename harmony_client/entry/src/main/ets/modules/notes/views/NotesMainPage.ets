@@ -740,6 +740,8 @@ export struct NotesMainPage {
     }
     .width('100%')
     .height('100%')
+    // 内容不足一屏时靠上（Scroll 默认垂直居中），对齐 Flutter ListView
+    .align(Alignment.Top)
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
   }

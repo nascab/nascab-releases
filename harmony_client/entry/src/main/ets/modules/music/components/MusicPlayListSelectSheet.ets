@@ -81,8 +81,10 @@ struct MusicPlayListSelectSheet {
     DialogUtil.dismissLoading(true);
     if (res.success && res.data !== undefined && res.data.id > 0) {
       const listId = res.data.id;
-      this.params.close();
+      // 必须先回传结果再关闭：close() 可能触发弹层 dismiss 回调（resolve(0)），
+      // Promise 只采纳首次结算，先 close 会导致后续 addIndexes 永远不执行。
       this.params.onSelect(listId);
+      this.params.close();
       return;
     }
     ToastFail();
@@ -166,8 +168,9 @@ struct MusicPlayListSelectSheet {
                 if (listId <= 0) {
                   return;
                 }
-                this.params.close();
+                // 先回传所选歌单 id，再关闭弹层（避免 dismiss 先以 0 结算 Promise）
                 this.params.onSelect(listId);
+                this.params.close();
               })
             }
           }, (it: PlayListItem) => `${it.id}`)
@@ -204,19 +207,34 @@ function ToastFail(): void {
 /** 弹出歌单选择，返回所选歌单 id（取消返回 0） */
 export async function pickMusicPlayListId(): Promise<number> {
   return new Promise<number>((resolve: (v: number) => void) => {
+    // 只采纳首个结果：选中(id) 优先于 dismiss(0)，避免关闭弹层的 dismiss 回调把结果覆盖成 0
+    let settled: boolean = false;
+    const finish = (v: number): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      hilog.info(0x0000, TAG, 'pickPlayList resolved: %{public}d', v);
+      resolve(v);
+    };
     const p = new MusicPlayListSelectParams();
     p.onSelect = (listId: number): void => {
-      resolve(listId);
+      finish(listId);
     };
     p.onDismissed = (): void => {
-      resolve(0);
+      finish(0);
     };
-    try {
-      SheetUtil.present<MusicPlayListSelectParams>(p, musicPlayListSelectBuilder);
-    } catch (e) {
-      hilog.error(0x0000, TAG, 'pickPlayList present failed: %{public}s', JSON.stringify(e));
-      resolve(0);
-    }
+    // 延后一帧再弹出：调用方（歌曲更多菜单/分组菜单）可能刚 close() 上一个弹层，
+    // 同一帧内 closeCustomDialog + openCustomDialog 易被抑制，导致选择框不出现、
+    // Promise 直接以 0 静默结算，表现为“已选添加到歌单但歌单内没有歌曲”。
+    setTimeout((): void => {
+      try {
+        SheetUtil.present<MusicPlayListSelectParams>(p, musicPlayListSelectBuilder);
+      } catch (e) {
+        hilog.error(0x0000, TAG, 'pickPlayList present failed: %{public}s', JSON.stringify(e));
+        finish(0);
+      }
+    }, 0);
   });
 }
 
