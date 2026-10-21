@@ -485,10 +485,9 @@ export struct MusicPlayerPage {
     SystemBars.deactivate(this);
   }
 
-  /** 沉浸页窗口样式：全屏布局，状态栏/导航条跟随主题底色 */
+  /** 沉浸页窗口样式：系统栏透明 + 全屏布局，内容延伸到状态栏/导航条后方 */
   private windowStyle(): PageWindowStyle {
-    const p = AppTheme.current();
-    return { colors: SystemBars.colors(p.statusBarContent, p.surfaceBg), fullscreen: true };
+    return { colors: SystemBars.immersiveColors(), fullscreen: true };
   }
 
   private fetchSafeAreas(): void {
@@ -792,7 +791,7 @@ export struct MusicPlayerPage {
           this.setShowLyrics(true);
         }
       })
-      Row({ space: 10 }) {
+      Row({ space: 32 }) {
         if (this.canIndexActions()) {
           if (this.favoriteLoading) {
             LoadingProgress()
@@ -810,7 +809,7 @@ export struct MusicPlayerPage {
               })
           }
         }
-        SymbolGlyph($r('sys.symbol.arrow_counterclockwise_clock'))
+        SymbolGlyph($r('sys.symbol.arrow_clockwise'))
           .fontSize(22)
           .fontColor([AppTheme.withAlpha(AppTheme.current().onSurface, 0.85)])
           .onClick(() => {
