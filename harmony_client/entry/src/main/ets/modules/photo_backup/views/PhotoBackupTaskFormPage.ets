@@ -9,7 +9,7 @@ import { PickOption, showOptionPickSheet } from '../../../common/components/Opti
 import { pickTargetFolderViaSheet } from '../../files/views/FolderPickerSheet';
 import { PhotoAlbumService } from '../services/PhotoAlbumService';
 import { PhotoBackupController } from '../controllers/PhotoBackupController';
-import { PhotoBackupSourceType, PhotoBackupTask } from '../models/PhotoBackupModels';
+import { PhotoAlbumInfo, PhotoBackupSourceType, PhotoBackupTask } from '../models/PhotoBackupModels';
 import {
   PhotoBackupRoutes, PhotoBackupTaskFormPageParam, PhotoBackupAlbumPickerPageParam
 } from '../router/PhotoBackupRoutes';
@@ -30,8 +30,9 @@ export struct PhotoBackupTaskFormPage {
   @Local sourceType: PhotoBackupSourceType = PhotoBackupSourceType.FOLDER;
   /** 是否已选择来源（对齐 Flutter _sourceType 可空语义） */
   @Local hasSource: boolean = false;
-  @Local sourceId: string = '';
-  @Local sourceName: string = '';
+  /** 来源相册（多选）：id 与名称顺序一一对应；文件夹来源为单值 */
+  @Local sourceIds: string[] = [];
+  @Local sourceNames: string[] = [];
   @Local targetText: string = '';
   @Local nameStrategy: string = 'skip';
   @Local saveType: string = '';
@@ -60,8 +61,8 @@ export struct PhotoBackupTaskFormPage {
     }
     this.sourceType = init.sourceType;
     this.hasSource = true;
-    this.sourceId = init.sourceId;
-    this.sourceName = init.sourceName;
+    this.sourceIds = init.sourceIds();
+    this.sourceNames = init.sourceNames();
     this.targetText = init.targetDir;
     this.nameStrategy = init.nameStrategy.length > 0 ? init.nameStrategy : 'skip';
     this.saveType = init.saveType;
@@ -82,11 +83,16 @@ export struct PhotoBackupTaskFormPage {
       return;
     }
     const p = new PhotoBackupAlbumPickerPageParam();
-    p.onPicked = (album): void => {
+    p.initialSelectedIds = this.sourceIds.slice();
+    p.onPicked = (albums: PhotoAlbumInfo[]): void => {
+      if (albums.length === 0) {
+        return;
+      }
       this.sourceType = PhotoBackupSourceType.ALBUM;
       this.hasSource = true;
-      this.sourceId = album.id;
-      this.sourceName = album.name.trim().length === 0 ? 'album' : album.name.trim();
+      this.sourceIds = albums.map((a: PhotoAlbumInfo): string => a.id);
+      this.sourceNames = albums.map((a: PhotoAlbumInfo): string =>
+        a.name.trim().length === 0 ? 'album' : a.name.trim());
     };
     NavUtil.push(PhotoBackupRoutes.PAGE_ALBUM_PICKER, p);
   }
@@ -120,7 +126,7 @@ export struct PhotoBackupTaskFormPage {
     if (this.saving) {
       return;
     }
-    if (!this.hasSource || this.sourceId.trim().length === 0
+    if (!this.hasSource || this.sourceIds.length === 0
       || this.targetText.trim().length === 0) {
       ToastUtil.show(L10n.t('photo_backup_required', '请先完善必填项'));
       return;
@@ -130,8 +136,8 @@ export struct PhotoBackupTaskFormPage {
       const ok = await this.ctrl.saveTask(
         this.isEdit && this.param.initial !== undefined ? this.param.initial.id : 0,
         this.sourceType,
-        this.sourceId.trim(),
-        this.sourceName.trim(),
+        this.sourceIds,
+        this.sourceNames,
         this.targetText.trim(),
         this.nameStrategy,
         this.saveType,
@@ -171,26 +177,30 @@ export struct PhotoBackupTaskFormPage {
       Scroll() {
         Column() {
           // 来源行卡（对齐 Flutter _lineCard source）
-          this.LineCard($r('sys.symbol.picture'),
-            L10n.t('photo_backup_source', '要备份的相册'),
-            !this.hasSource
+          FormLineCard({
+            icon: $r('sys.symbol.picture'),
+            title: L10n.t('photo_backup_source', '要备份的相册'),
+            subtitle: !this.hasSource
               ? L10n.t('photo_backup_source_empty', '请选择要备份的相册')
               : `${this.sourceType === PhotoBackupSourceType.ALBUM
                 ? L10n.t('photo_backup_source_album', '相册')
-                : L10n.t('photo_backup_source_folder', '文件夹')} · ${this.sourceName}`,
-            (): void => {
+                : L10n.t('photo_backup_source_folder', '文件夹')} · ${this.sourceNames.join('、')}`,
+            onTap: (): void => {
               void this.pickSource();
-            })
+            }
+          })
           // 目标目录行卡（对齐 Flutter _lineCard target）
           Column() {
-            this.LineCard($r('sys.symbol.folder'),
-              L10n.t('photo_backup_target', '目标文件夹'),
-              this.targetText.trim().length === 0
+            FormLineCard({
+              icon: $r('sys.symbol.folder'),
+              title: L10n.t('photo_backup_target', '目标文件夹'),
+              subtitle: this.targetText.trim().length === 0
                 ? L10n.t('quick_share_path_hint', '未选择路径')
                 : this.targetText.trim(),
-              (): void => {
+              onTap: (): void => {
                 this.pickTarget();
-              })
+              }
+            })
           }
           .width('100%')
           .margin({ top: 10 })
@@ -333,19 +343,35 @@ export struct PhotoBackupTaskFormPage {
     }
     return L10n.t('upload_center_save_type_root', '保存到根目录(默认)');
   }
+}
 
-  /** 行卡（对齐 Flutter _lineCard：图标 + 标题/副标题 + 右箭头） */
-  @Builder
-  LineCard(icon: Resource, title: string, subtitle: string, onTap: () => void) {
+/**
+ * 行卡（对齐 Flutter _lineCard：图标 + 标题/副标题 + 右箭头）。
+ * 必须用 @ComponentV2 组件承载：@Builder 的按值参数不会随父组件状态变化刷新，
+ * 会导致相册选择回调后来源文案仍显示旧值。
+ */
+@ComponentV2
+struct FormLineCard {
+  @Param icon: Resource = $r('sys.symbol.folder');
+  @Param title: string = '';
+  @Param subtitle: string = '';
+  @Param onTap: () => void = (): void => {
+  };
+
+  private palette(): ThemePalette {
+    return AppTheme.current();
+  }
+
+  build() {
     Row({ space: 10 }) {
-      SymbolGlyph(icon)
+      SymbolGlyph(this.icon)
         .fontSize(22)
         .fontColor([this.palette().primary])
       Column({ space: 2 }) {
-        Text(title)
+        Text(this.title)
           .fontSize(14)
           .fontColor(this.palette().onSurface)
-        Text(subtitle)
+        Text(this.subtitle)
           .fontSize(12)
           .fontColor(this.palette().subText)
           .maxLines(1)
@@ -365,7 +391,7 @@ export struct PhotoBackupTaskFormPage {
     .backgroundColor(this.palette().surfaceBg)
     .border({ width: 1, color: this.palette().divider })
     .onClick((): void => {
-      onTap();
+      this.onTap();
     })
   }
 }

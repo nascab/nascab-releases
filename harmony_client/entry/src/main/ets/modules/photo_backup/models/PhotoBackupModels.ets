@@ -23,7 +23,9 @@ export class PhotoBackupTask {
   @Trace userId: number = 0;
   @Trace name: string = '';
   @Trace sourceType: PhotoBackupSourceType = PhotoBackupSourceType.FOLDER;
+  /** 相册来源：多个相册 uri 以换行分隔（兼容历史单相册任务） */
   @Trace sourceId: string = '';
+  /** 相册来源：多个相册名称以换行分隔，与 sourceId 顺序一一对应 */
   @Trace sourceName: string = '';
   /** 上传目标目录 */
   @Trace targetDir: string = '';
@@ -33,6 +35,33 @@ export class PhotoBackupTask {
   @Trace autoStartOnLaunch: boolean = false;
   @Trace createdAtMs: number = 0;
   @Trace updatedAtMs: number = 0;
+
+  /** 来源 id 列表（多相册按换行拆分，过滤空值） */
+  sourceIds(): string[] {
+    return PhotoBackupTask.splitLines(this.sourceId);
+  }
+
+  /** 来源名称列表（与 sourceIds 顺序对应） */
+  sourceNames(): string[] {
+    return PhotoBackupTask.splitLines(this.sourceName);
+  }
+
+  /** 卡片展示用来源名：多相册以「、」连接 */
+  sourceDisplayName(): string {
+    const names = this.sourceNames();
+    return names.length > 0 ? names.join('、') : this.sourceName.trim();
+  }
+
+  private static splitLines(raw: string): string[] {
+    const out: string[] = [];
+    for (const part of raw.split('\n')) {
+      const v = part.trim();
+      if (v.length > 0) {
+        out.push(v);
+      }
+    }
+    return out;
+  }
 }
 
 export class PhotoBackupRunRecord {
@@ -82,6 +111,8 @@ export class PhotoSourceEntry {
   orderMs: number = 0;
   size: number = 0;
   fileMtimeMs: number = 0;
+  /** 所属相册名（多相册备份时作为目标子目录前缀；文件夹来源为空） */
+  albumName: string = '';
 }
 
 /** 相册信息（相册选择页用，对齐 Flutter 相册枚举项） */

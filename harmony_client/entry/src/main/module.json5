@@ -55,6 +55,17 @@
           "abilities": ["EntryAbility"],
           "when": "inuse"
         }
+      },
+      // MEDIA_LOCATION：读取媒体文件 EXIF 中的地理位置信息。
+      // 未申请时 Media Library Kit 读取图片会做脱敏处理（抹除 GPS 等敏感 EXIF 字段），
+      // 导致相册备份上传的照片丢失地理位置；normal 级 user_grant，无需 ACL
+      {
+        "name": "ohos.permission.MEDIA_LOCATION",
+        "reason": "$string:permission_media_location_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
       }
     ],
     "abilities": [

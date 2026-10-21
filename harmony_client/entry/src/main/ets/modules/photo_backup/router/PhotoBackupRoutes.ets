@@ -25,8 +25,9 @@ export class PhotoBackupTaskFormPageParam {
   initial: PhotoBackupTask | undefined = undefined;
 }
 
-/** 相册选择页参数：选中相册通过 onPicked 回传（对齐 Flutter Navigator.pop(path)） */
+/** 相册选择页参数：支持多选，选中的相册列表通过 onPicked 回传；initialSelectedIds 用于回显已选 */
 export class PhotoBackupAlbumPickerPageParam {
-  onPicked: (album: PhotoAlbumInfo) => void = (_album: PhotoAlbumInfo): void => {
+  onPicked: (albums: PhotoAlbumInfo[]) => void = (_albums: PhotoAlbumInfo[]): void => {
   };
+  initialSelectedIds: string[] = [];
 }

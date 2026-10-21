@@ -23,6 +23,10 @@ const LIVE_EXPORT_TIMEOUT_MS = 60000;
 /** 应用包名（权限被拒后跳转系统设置「应用详情」页需要） */
 const BUNDLE_NAME = 'com.nascabos.hongmeng';
 
+/** 相册多选选择结果事件名称：PhotoBackupTaskFormPage 监听更新已选 */
+export const EVENT_PHOTO_BACKUP_ALBUMS_PICKED = 'photo_backup_albums_picked';
+/** 多选选择结果数据格式：`albumId1\nalbumName1\n...` */
+
 /** 实况照片视频轨导出结果 */
 class LiveVideoExport {
   /** 沙盒文件路径（可被 fileIo 直接读取） */
@@ -34,10 +38,24 @@ class LiveVideoExport {
 export class PhotoAlbumAssetMeta {
   asset: photoAccessHelper.PhotoAsset;
   orderMs: number = 0;
+  /** 所属相册名（多相册备份时用于目标子目录） */
+  albumName: string = '';
 
-  constructor(asset: photoAccessHelper.PhotoAsset, orderMs: number) {
+  constructor(asset: photoAccessHelper.PhotoAsset, orderMs: number, albumName: string = '') {
     this.asset = asset;
     this.orderMs = orderMs;
+    this.albumName = albumName;
+  }
+}
+
+/** 扫描目标：相册实例 + 用于目标子目录的相册名 */
+class AlbumScanTarget {
+  album: photoAccessHelper.Album;
+  name: string;
+
+  constructor(album: photoAccessHelper.Album, name: string) {
+    this.album = album;
+    this.name = name;
   }
 }
 
@@ -93,7 +111,12 @@ export class PhotoAlbumService {
   // 权限
   // ============================================================
 
-  /** 请求照片读取权限；已授权时系统直接返回 granted，不弹窗 */
+  /**
+   * 请求照片读取权限；已授权时系统直接返回 granted，不弹窗。
+   * MEDIA_LOCATION 与 READ_IMAGEVIDEO 同属「图片和视频」权限组，一次弹窗统一授权；
+   * 缺少 MEDIA_LOCATION 时系统读取图片会脱敏（抹除 EXIF 中的 GPS 等字段），
+   * 导致备份到 NAS 的照片丢失地理位置，但它不是备份流程的必要条件，不影响返回值。
+   */
   static async requestPermission(): Promise<boolean> {
     try {
       const ctx = WindowStore.appContext;
@@ -101,17 +124,14 @@ export class PhotoAlbumService {
         return false;
       }
       const atManager = abilityAccessCtrl.createAtManager();
-      const result = await atManager.requestPermissionsFromUser(ctx, ['ohos.permission.READ_IMAGEVIDEO']);
+      const result = await atManager.requestPermissionsFromUser(ctx,
+        ['ohos.permission.READ_IMAGEVIDEO', 'ohos.permission.MEDIA_LOCATION']);
       const results = result.authResults;
       if (results.length === 0) {
         return false;
       }
-      for (const r of results) {
-        if (r !== 0) {
-          return false;
-        }
-      }
-      return true;
+      // 仅第一项 READ_IMAGEVIDEO 为必需权限
+      return results[0] === 0;
     } catch (_e) {
       return false;
     }
@@ -496,60 +516,83 @@ export class PhotoAlbumService {
 
   /**
    * 全量扫描（对齐 Flutter _scanAlbum）：页 200，返回按 orderMs+uniqueId 升序的全部条目。
-   * uploadLivePhotoVideo 时为实况照片追加视频轨条目。
+   * 多相册任务逐相册扫描并合并；uploadLivePhotoVideo 时为实况照片追加视频轨条目。
    */
   static async scanAlbum(task: PhotoBackupTask): Promise<PhotoSourceEntry[]> {
     await PhotoAlbumService.ensureScanPermission();
-    const album = await PhotoAlbumService.findAlbum(task.sourceId);
-    if (album === undefined) {
+    const targets = await PhotoAlbumService.resolveTaskAlbums(task);
+    if (targets.length === 0) {
       throw PhotoAlbumService.albumNotFoundError();
     }
     const out: PhotoSourceEntry[] = [];
-    let offset = 0;
-    while (true) {
-      const list = await PhotoAlbumService.fetchPage(album, SCAN_PAGE_SIZE, offset);
-      if (list.length === 0) {
-        break;
-      }
-      for (const asset of list) {
-        const orderMs = PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_ADDED) * 1000;
-        const entry = PhotoAlbumService.buildEntry(asset, orderMs);
-        if (entry === undefined) {
-          continue;
+    for (const target of targets) {
+      const album = target.album;
+      let offset = 0;
+      while (true) {
+        const list = await PhotoAlbumService.fetchPage(album, SCAN_PAGE_SIZE, offset);
+        if (list.length === 0) {
+          break;
         }
-        out.push(entry);
-        if (!task.uploadLivePhotoVideo) {
-          continue;
-        }
-        if (PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.PHOTO_SUBTYPE)
-          !== photoAccessHelper.PhotoSubtype.MOVING_PHOTO) {
-          continue;
-        }
-        try {
-          const live = await PhotoAlbumService.exportLiveVideo(asset);
-          if (live.size <= 0) {
+        for (const asset of list) {
+          const orderMs = PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_ADDED) * 1000;
+          const entry = PhotoAlbumService.buildEntry(asset, orderMs);
+          if (entry === undefined) {
             continue;
           }
-          const lvName = `${PhotoAlbumService.stripExt(entry.displayName)}.MOV`;
-          const lvEntry = new PhotoSourceEntry();
-          lvEntry.sourceUniqueId = `${asset.uri}#live`;
-          lvEntry.displayName = lvName;
-          lvEntry.localUri = live.path;
-          lvEntry.relativePath = lvName;
-          lvEntry.orderMs = orderMs;
-          lvEntry.size = live.size;
-          lvEntry.fileMtimeMs = entry.fileMtimeMs;
-          out.push(lvEntry);
-        } catch (_e) {
-          // 非实况或导出失败：跳过视频轨
+          entry.albumName = target.name;
+          out.push(entry);
+          if (!task.uploadLivePhotoVideo) {
+            continue;
+          }
+          if (PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.PHOTO_SUBTYPE)
+            !== photoAccessHelper.PhotoSubtype.MOVING_PHOTO) {
+            continue;
+          }
+          try {
+            const live = await PhotoAlbumService.exportLiveVideo(asset);
+            if (live.size <= 0) {
+              continue;
+            }
+            const lvName = `${PhotoAlbumService.stripExt(entry.displayName)}.MOV`;
+            const lvEntry = new PhotoSourceEntry();
+            lvEntry.sourceUniqueId = `${asset.uri}#live`;
+            lvEntry.displayName = lvName;
+            lvEntry.localUri = live.path;
+            lvEntry.relativePath = lvName;
+            lvEntry.orderMs = orderMs;
+            lvEntry.size = live.size;
+            lvEntry.fileMtimeMs = entry.fileMtimeMs;
+            lvEntry.albumName = target.name;
+            out.push(lvEntry);
+          } catch (_e) {
+            // 非实况或导出失败：跳过视频轨
+          }
         }
+        if (list.length < SCAN_PAGE_SIZE) {
+          break;
+        }
+        offset += SCAN_PAGE_SIZE;
       }
-      if (list.length < SCAN_PAGE_SIZE) {
-        break;
-      }
-      offset += SCAN_PAGE_SIZE;
     }
     out.sort(PhotoAlbumService.compareEntries);
+    return out;
+  }
+
+  /** 解析任务的相册列表（多相册按换行拆分；已删除的相册跳过），返回相册与显示名 */
+  private static async resolveTaskAlbums(task: PhotoBackupTask): Promise<AlbumScanTarget[]> {
+    const ids = task.sourceIds();
+    const names = task.sourceNames();
+    const out: AlbumScanTarget[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const album = await PhotoAlbumService.findAlbum(ids[i]);
+      if (album === undefined) {
+        continue;
+      }
+      const name = i < names.length && names[i].length > 0
+        ? names[i]
+        : PhotoAlbumService.displayNameOf(album);
+      out.push(new AlbumScanTarget(album, name));
+    }
     return out;
   }
 
@@ -560,66 +603,73 @@ export class PhotoAlbumService {
   static async scanAlbumBatched(task: PhotoBackupTask, cursor: PhotoBackupCursor | undefined,
     onBatch: (batch: PhotoSourceEntry[]) => Promise<boolean>): Promise<void> {
     await PhotoAlbumService.ensureScanPermission();
-    const album = await PhotoAlbumService.findAlbum(task.sourceId);
-    if (album === undefined) {
+    const targets = await PhotoAlbumService.resolveTaskAlbums(task);
+    if (targets.length === 0) {
       throw PhotoAlbumService.albumNotFoundError();
     }
-    let offset = 0;
-    while (true) {
-      const list = await PhotoAlbumService.fetchPage(album, STREAM_PAGE_SIZE, offset);
-      if (list.length === 0) {
-        break;
-      }
-      const batch: PhotoSourceEntry[] = [];
-      for (const asset of list) {
-        const orderMs = PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_ADDED) * 1000;
-        const entry = PhotoAlbumService.buildEntry(asset, orderMs);
-        if (entry !== undefined && (cursor === undefined || PhotoAlbumService.isPending(orderMs,
-          entry.sourceUniqueId, cursor))) {
-          batch.push(entry);
+    for (const target of targets) {
+      const album = target.album;
+      let offset = 0;
+      while (true) {
+        const list = await PhotoAlbumService.fetchPage(album, STREAM_PAGE_SIZE, offset);
+        if (list.length === 0) {
+          break;
         }
-        if (!task.uploadLivePhotoVideo) {
-          continue;
-        }
-        if (PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.PHOTO_SUBTYPE)
-          !== photoAccessHelper.PhotoSubtype.MOVING_PHOTO) {
-          continue;
-        }
-        try {
-          const live = await PhotoAlbumService.exportLiveVideo(asset);
-          if (live.size <= 0) {
+        const batch: PhotoSourceEntry[] = [];
+        for (const asset of list) {
+          const orderMs = PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_ADDED) * 1000;
+          const entry = PhotoAlbumService.buildEntry(asset, orderMs);
+          if (entry !== undefined) {
+            entry.albumName = target.name;
+          }
+          if (entry !== undefined && (cursor === undefined || PhotoAlbumService.isPending(orderMs,
+            entry.sourceUniqueId, cursor))) {
+            batch.push(entry);
+          }
+          if (!task.uploadLivePhotoVideo) {
             continue;
           }
-          const baseName = entry !== undefined ? entry.displayName
-            : PhotoAlbumService.stripExt(PhotoAlbumService.baseName(asset.uri));
-          const lvName = `${PhotoAlbumService.stripExt(baseName)}.MOV`;
-          const lvEntry = new PhotoSourceEntry();
-          lvEntry.sourceUniqueId = `${asset.uri}#live`;
-          lvEntry.displayName = lvName;
-          lvEntry.localUri = live.path;
-          lvEntry.relativePath = lvName;
-          lvEntry.orderMs = orderMs;
-          lvEntry.size = live.size;
-          lvEntry.fileMtimeMs = entry !== undefined ? entry.fileMtimeMs
-            : PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_MODIFIED) * 1000;
-          if (cursor === undefined || PhotoAlbumService.isPending(orderMs, lvEntry.sourceUniqueId, cursor)) {
-            batch.push(lvEntry);
+          if (PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.PHOTO_SUBTYPE)
+            !== photoAccessHelper.PhotoSubtype.MOVING_PHOTO) {
+            continue;
           }
-        } catch (_e) {
-          // 非实况或导出失败：跳过视频轨
+          try {
+            const live = await PhotoAlbumService.exportLiveVideo(asset);
+            if (live.size <= 0) {
+              continue;
+            }
+            const baseName = entry !== undefined ? entry.displayName
+              : PhotoAlbumService.stripExt(PhotoAlbumService.baseName(asset.uri));
+            const lvName = `${PhotoAlbumService.stripExt(baseName)}.MOV`;
+            const lvEntry = new PhotoSourceEntry();
+            lvEntry.sourceUniqueId = `${asset.uri}#live`;
+            lvEntry.displayName = lvName;
+            lvEntry.localUri = live.path;
+            lvEntry.relativePath = lvName;
+            lvEntry.orderMs = orderMs;
+            lvEntry.size = live.size;
+            lvEntry.fileMtimeMs = entry !== undefined ? entry.fileMtimeMs
+              : PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_MODIFIED) * 1000;
+            lvEntry.albumName = target.name;
+            if (cursor === undefined || PhotoAlbumService.isPending(orderMs, lvEntry.sourceUniqueId, cursor)) {
+              batch.push(lvEntry);
+            }
+          } catch (_e) {
+            // 非实况或导出失败：跳过视频轨
+          }
         }
-      }
-      if (batch.length > 0) {
-        batch.sort(PhotoAlbumService.compareEntries);
-        const keepGoing = await onBatch(batch);
-        if (!keepGoing) {
-          return;
+        if (batch.length > 0) {
+          batch.sort(PhotoAlbumService.compareEntries);
+          const keepGoing = await onBatch(batch);
+          if (!keepGoing) {
+            return;
+          }
         }
+        if (list.length < STREAM_PAGE_SIZE) {
+          break;
+        }
+        offset += STREAM_PAGE_SIZE;
       }
-      if (list.length < STREAM_PAGE_SIZE) {
-        break;
-      }
-      offset += STREAM_PAGE_SIZE;
     }
   }
 
@@ -630,31 +680,34 @@ export class PhotoAlbumService {
   static async scanAlbumPendingMeta(task: PhotoBackupTask,
     cursor: PhotoBackupCursor): Promise<PhotoAlbumAssetMeta[]> {
     await PhotoAlbumService.ensureScanPermission();
-    const album = await PhotoAlbumService.findAlbum(task.sourceId);
-    if (album === undefined) {
+    const targets = await PhotoAlbumService.resolveTaskAlbums(task);
+    if (targets.length === 0) {
       throw PhotoAlbumService.albumNotFoundError();
     }
     const pendingMeta: PhotoAlbumAssetMeta[] = [];
-    let offset = 0;
-    while (true) {
-      const list = await PhotoAlbumService.fetchPage(album, META_PAGE_SIZE, offset);
-      if (list.length === 0) {
-        break;
-      }
-      for (const asset of list) {
-        if (!PhotoAlbumService.isSupportedType(asset)) {
-          continue;
+    for (const target of targets) {
+      const album = target.album;
+      let offset = 0;
+      while (true) {
+        const list = await PhotoAlbumService.fetchPage(album, META_PAGE_SIZE, offset);
+        if (list.length === 0) {
+          break;
         }
-        const orderMs = PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_ADDED) * 1000;
-        if (!PhotoAlbumService.isPending(orderMs, asset.uri, cursor)) {
-          continue;
+        for (const asset of list) {
+          if (!PhotoAlbumService.isSupportedType(asset)) {
+            continue;
+          }
+          const orderMs = PhotoAlbumService.num(asset, photoAccessHelper.PhotoKeys.DATE_ADDED) * 1000;
+          if (!PhotoAlbumService.isPending(orderMs, asset.uri, cursor)) {
+            continue;
+          }
+          pendingMeta.push(new PhotoAlbumAssetMeta(asset, orderMs, target.name));
         }
-        pendingMeta.push(new PhotoAlbumAssetMeta(asset, orderMs));
+        if (list.length < META_PAGE_SIZE) {
+          break;
+        }
+        offset += META_PAGE_SIZE;
       }
-      if (list.length < META_PAGE_SIZE) {
-        break;
-      }
-      offset += META_PAGE_SIZE;
     }
     pendingMeta.sort((a: PhotoAlbumAssetMeta, b: PhotoAlbumAssetMeta): number => {
       if (a.orderMs !== b.orderMs) {
@@ -676,6 +729,7 @@ export class PhotoAlbumService {
     if (entry === undefined) {
       return [];
     }
+    entry.albumName = meta.albumName;
     const entries: PhotoSourceEntry[] = [entry];
     if (!task.uploadLivePhotoVideo) {
       return entries;
@@ -698,6 +752,7 @@ export class PhotoAlbumService {
       lvEntry.orderMs = meta.orderMs;
       lvEntry.size = live.size;
       lvEntry.fileMtimeMs = entry.fileMtimeMs;
+      lvEntry.albumName = meta.albumName;
       entries.push(lvEntry);
     } catch (_e) {
       // 非实况或导出失败：仅上传主图

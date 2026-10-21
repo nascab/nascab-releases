@@ -223,7 +223,7 @@ struct TaskCard {
         .width('100%')
 
         this.KvRow(L10n.t('photo_backup_source', '要备份的相册'),
-          `${this.sourceTypeText()} · ${this.task.sourceName}`)
+          `${this.sourceTypeText()} · ${this.task.sourceDisplayName()}`)
         this.KvRow(L10n.t('photo_backup_target', '目标文件夹'), this.task.targetDir)
         this.KvRow(L10n.t('folder_name_strategy', '同名文件策略'),
           L10n.t(this.task.nameStrategy, this.task.nameStrategy))

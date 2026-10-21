@@ -194,12 +194,18 @@ export class PhotoBackupController {
   // 任务 CRUD
   // ============================================================
 
-  async saveTask(id: number, sourceType: PhotoBackupSourceType, sourceId: string, sourceName: string,
+  async saveTask(id: number, sourceType: PhotoBackupSourceType, sourceIds: string[], sourceNames: string[],
     targetDir: string, nameStrategy: string, saveType: string, uploadLivePhotoVideo: boolean,
     autoStartOnLaunch: boolean): Promise<boolean> {
-    if (sourceId.trim().length === 0 || sourceName.trim().length === 0 || targetDir.trim().length === 0) {
+    if (sourceIds.length === 0 || sourceNames.length !== sourceIds.length || targetDir.trim().length === 0) {
       ToastUtil.show(L10n.t('photo_backup_required', '请填写完整信息'));
       return false;
+    }
+    for (const sid of sourceIds) {
+      if (sid.trim().length === 0) {
+        ToastUtil.show(L10n.t('photo_backup_required', '请填写完整信息'));
+        return false;
+      }
     }
     if (this.identityServerId().length === 0 || this.identityUserId() <= 0) {
       ToastUtil.show(L10n.t('operation_failed', '操作失败'));
@@ -209,10 +215,10 @@ export class PhotoBackupController {
     task.id = id;
     task.serverId = this.identityServerId();
     task.userId = this.identityUserId();
-    task.name = sourceName.trim();
+    task.name = sourceNames.join('、').trim();
     task.sourceType = sourceType;
-    task.sourceId = sourceId.trim();
-    task.sourceName = sourceName.trim();
+    task.sourceId = sourceIds.map((v: string): string => v.trim()).join('\n');
+    task.sourceName = sourceNames.map((v: string): string => v.trim()).join('\n');
     task.targetDir = targetDir.trim();
     task.nameStrategy = nameStrategy.trim().length === 0 ? 'skip' : nameStrategy.trim();
     task.saveType = saveType.trim();
@@ -296,7 +302,11 @@ export class PhotoBackupController {
     try {
       const fileHash = await UploadTransferHelper.sha256Hex(
         `${item.sourceUniqueId}|${item.size}|${item.fileMtimeMs}`);
-      const relPath = task.sourceName.length > 0 ? `${task.sourceName}/${item.relativePath}` : item.relativePath;
+      // 相册来源按各自相册名分目录；文件夹来源沿用任务来源名
+      const prefixRaw = task.sourceType === PhotoBackupSourceType.ALBUM && item.albumName.length > 0
+        ? item.albumName : task.sourceName;
+      const prefix = prefixRaw.split('/').join('_');
+      const relPath = prefix.length > 0 ? `${prefix}/${item.relativePath}` : item.relativePath;
       const transferTask = new TransferTask('', item.displayName, item.localUri, task.targetDir,
         item.size, TransferStatus.PENDING, 0);
       transferTask.fileHash = fileHash;
