@@ -104,12 +104,18 @@ export struct MusicDiscWithNeedle {
 
         Stack() {
           if (this.coverUrl.trim().length > 0) {
-            AppImage({ url: this.coverUrl, showLoadingSpin: false })
+            AppImage({
+              url: this.coverUrl,
+              showLoadingSpin: false,
+              imageRadius: this.coverRadius()
+            })
           } else {
             Image($rawfile('music/icons/default_cover.jpg'))
               .width('100%')
               .height('100%')
               .objectFit(ImageFit.Cover)
+              .borderRadius(this.coverRadius())
+              .clip(true)
           }
         }
         .width(this.innerSize())
@@ -155,7 +161,13 @@ export struct MusicDiscWithNeedle {
   }
 
   private innerSize(): number {
-    return Math.min(this.discSize() * 0.42 * 1.3, this.discSize() * 0.62);
+    // 封面基本为正方形，放大到唱片直径 0.65，完整盖住中心标签区
+    return this.discSize() * 0.65;
+  }
+
+  /** 封面圆形裁剪半径（扣除 3vp 内边距） */
+  private coverRadius(): number {
+    return (this.innerSize() - 6) / 2;
   }
 
   private needleSize(): number {
