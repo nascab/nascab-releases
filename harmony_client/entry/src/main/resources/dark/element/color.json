@@ -79,6 +79,30 @@
     {
       "name": "auth_mask",
       "value": "#59000000"
+    },
+    {
+      "name": "auth_primary_12",
+      "value": "#1F007AFF"
+    },
+    {
+      "name": "auth_surface_45",
+      "value": "#732A2A2A"
+    },
+    {
+      "name": "auth_text_label",
+      "value": "#80FFFFFF"
+    },
+    {
+      "name": "auth_text_subtitle",
+      "value": "#8CFFFFFF"
+    },
+    {
+      "name": "auth_text_dimmed",
+      "value": "#59FFFFFF"
+    },
+    {
+      "name": "auth_divider_faint",
+      "value": "#14FFFFFF"
     }
   ]
 }

@@ -44,6 +44,18 @@ export class AuthTheme {
   static readonly inputBorder: Resource = $r('app.color.auth_input_border');
   /** 遮罩（黑色 35%），对应 DialogUtil 遮罩 */
   static readonly mask: Resource = $r('app.color.auth_mask');
+  /** 主色 12% 透明（登录中对话框图标容器背景），对应 primary.withValues(alpha:0.12) */
+  static readonly primary12: Resource = $r('app.color.auth_primary_12');
+  /** 服务器信息容器背景，对应 surfaceContainerHighest.withValues(alpha:0.45) */
+  static readonly surface45: Resource = $r('app.color.auth_surface_45');
+  /** 小号标签文字，对应 onSurface.withValues(alpha:0.5) */
+  static readonly textLabel: Resource = $r('app.color.auth_text_label');
+  /** 对话框副标题文字，对应 onSurface.withValues(alpha:0.55) */
+  static readonly textSubtitle: Resource = $r('app.color.auth_text_subtitle');
+  /** 空值占位文字，对应 onSurface.withValues(alpha:0.35) */
+  static readonly textDimmed: Resource = $r('app.color.auth_text_dimmed');
+  /** 极淡分割线，对应 onSurface.withValues(alpha:0.08) */
+  static readonly dividerFaint: Resource = $r('app.color.auth_divider_faint');
 }
 
 /** 通用确认/信息对话框状态 */

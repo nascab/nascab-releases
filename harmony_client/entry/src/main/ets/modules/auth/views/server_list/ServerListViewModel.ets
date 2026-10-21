@@ -170,6 +170,8 @@ export class ServerListViewModel {
   @Trace showCreateAdminView: boolean = false;
   @Trace selectedServer: ServerInfo | undefined = undefined;
   @Trace isTapConnecting: boolean = false;
+  /** 当前点击登录的服务器：登录中对话框展示其信息（对齐 Flutter _tappingServerItem，不清空供二次密码/2FA 复用） */
+  @Trace tappingServer: ServerInfo | undefined = undefined;
 
   readonly confirmDialog: ConfirmDialogState = new ConfirmDialogState();
   readonly privacyDialog: ConfirmDialogState = new ConfirmDialogState();
@@ -195,7 +197,6 @@ export class ServerListViewModel {
   /** 点击登录取消信号（对齐 Flutter _tapCancelCompleter） */
   private tapCancelled: boolean = false;
   private tapCancelSignal: DeferredSignal | undefined = undefined;
-  private tappingServer: ServerInfo | undefined = undefined;
   /** 冷启动自动登录仅执行一次（对齐 Flutter _launchAutoLoginHandled） */
   private static launchAutoLoginHandled: boolean = false;
 
@@ -559,7 +560,7 @@ export class ServerListViewModel {
       this.showError(L10n.serverStatusCheckFailedWithError(ServerListViewModel.errorMessage(e)));
     } finally {
       this.tapLocked = false;
-      this.tappingServer = undefined;
+      // 保留 tappingServer：密码/2FA 二次提交时登录中对话框仍需展示同一服务器信息
       this.isTapConnecting = false;
     }
   }

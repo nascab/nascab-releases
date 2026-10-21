@@ -187,6 +187,177 @@ export struct ServerListPage {
     }
   }
 
+  /** 登录中对话框服务器展示名：自定义名称 → 主机名 → 地址 → 默认名（对齐 Flutter _serverDisplayName） */
+  private tapDialogName(server: ServerInfo): string {
+    const name = server.serverName.trim();
+    if (name.length > 0) {
+      return name;
+    }
+    const hostName = server.displayHostName.trim();
+    if (hostName.length > 0) {
+      return hostName;
+    }
+    const url = server.serverUrl.trim();
+    return url.length > 0 ? url : 'NasCab Server';
+  }
+
+  /** 登录中对话框副标题：主机名 · 平台友好名（对齐 Flutter subtitle 拼接规则） */
+  private tapDialogSubtitle(server: ServerInfo): string {
+    const parts: string[] = [];
+    const hostName = server.displayHostName.trim();
+    if (hostName.length > 0) {
+      parts.push(hostName);
+    }
+    const platform = server.platformFriendlyName.trim();
+    if (platform.length > 0 && platform !== 'unknown') {
+      parts.push(platform);
+    }
+    return parts.join(' · ');
+  }
+
+  /** 登录中对话框头部图标：本机→电脑，配对码→云，其余→服务器（对齐 Flutter computer/cloud/dns） */
+  private tapDialogIcon(server: ServerInfo): Resource {
+    if (server.isLocalServer) {
+      return $r('sys.symbol.computer');
+    }
+    if (server.hasPairCode()) {
+      return $r('sys.symbol.cloud');
+    }
+    return $r('sys.symbol.externaldrive');
+  }
+
+  /** 登录信息条目：小号标签在上，值在下（对齐 Flutter _buildLoginInfoItem） */
+  @Builder
+  LoginInfoItem(label: string, value: string, dimmed: boolean) {
+    Column() {
+      Text(label)
+        .fontSize(11)
+        .fontColor(AuthTheme.textLabel)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+      Text(value)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(dimmed ? AuthTheme.textDimmed : AuthTheme.textMain)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .margin({ top: 2 })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 7, bottom: 7 })
+  }
+
+  /** 登录中对话框：展示当前登录服务器信息与登录进度（对齐 Flutter _showTapLoadingDialog） */
+  @Builder
+  TapLoadingDialog() {
+    Column() {
+      if (this.vm.tappingServer !== undefined) {
+        // 头部：服务器图标 + 名称 + 主机名/平台
+        Row() {
+          Column() {
+            SymbolGlyph(this.tapDialogIcon(this.vm.tappingServer!))
+              .fontSize(24)
+              .fontColor([AuthTheme.primary])
+          }
+          .width(42)
+          .height(42)
+          .borderRadius(12)
+          .backgroundColor(AuthTheme.primary12)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+
+          Column() {
+            Text(this.tapDialogName(this.vm.tappingServer!))
+              .fontSize(14)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AuthTheme.textMain)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+            if (this.tapDialogSubtitle(this.vm.tappingServer!).length > 0) {
+              Text(this.tapDialogSubtitle(this.vm.tappingServer!))
+                .fontSize(12)
+                .fontColor(AuthTheme.textSubtitle)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+                .margin({ top: 3 })
+            }
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          .margin({ left: 12 })
+        }
+        .width('100%')
+
+        // 服务器详细信息：地址 / 配对码 / 用户名（空值用「—」占位并弱化）
+        Column() {
+          this.LoginInfoItem(L10n.serverAddAddressLabel,
+            this.vm.tappingServer!.serverUrl.trim().length > 0 ? this.vm.tappingServer!.serverUrl.trim() : '—',
+            this.vm.tappingServer!.serverUrl.trim().length === 0)
+          Divider()
+            .strokeWidth(0.6)
+            .color(AuthTheme.dividerFaint)
+          this.LoginInfoItem(L10n.serverPairCodeLabel,
+            (this.vm.tappingServer!.pairCode ?? '').trim().length > 0
+              ? (this.vm.tappingServer!.pairCode ?? '').trim() : '—',
+            (this.vm.tappingServer!.pairCode ?? '').trim().length === 0)
+          if ((this.vm.tappingServer!.username ?? '').trim().length > 0) {
+            Divider()
+              .strokeWidth(0.6)
+              .color(AuthTheme.dividerFaint)
+            this.LoginInfoItem(L10n.username, (this.vm.tappingServer!.username ?? '').trim(), false)
+          }
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+        .borderRadius(12)
+        .backgroundColor(AuthTheme.surface45)
+        .margin({ top: 16 })
+      }
+
+      // 登录进度
+      Row() {
+        LoadingProgress()
+          .width(20)
+          .height(20)
+          .color(AuthTheme.primary)
+        Text(L10n.authLoginLoading)
+          .fontSize(14)
+          .fontColor(AuthTheme.textMain)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+          .margin({ left: 10 })
+      }
+      .width('100%')
+      .margin({ top: 12 })
+
+      // 取消按钮单独一行横向居中（对齐 Flutter；右侧补 8 抵消卡片右内边距差）
+      Row() {
+        DialogTextButton({
+          label: L10n.cancel,
+          action: () => this.vm.cancelTap()
+        })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ right: 8 })
+      .margin({ top: 4 })
+    }
+    // 宽度取屏幕 80% 与 300 较小值（对齐 Flutter dialogWidth 规则）
+    .width('80%')
+    .constraintSize({ maxWidth: 300 })
+    .padding({ left: 20, right: 12, top: 20, bottom: 8 })
+    .borderRadius(18)
+    .backgroundColor(AuthTheme.dialogBg)
+    .alignItems(HorizontalAlign.Start)
+  }
+
   @Builder
   LoadingOverlay() {
     Stack() {
@@ -194,27 +365,7 @@ export struct ServerListPage {
         .width('100%')
         .height('100%')
         .backgroundColor(AuthTheme.mask)
-      Column({ space: 10 }) {
-        Row({ space: 14 }) {
-          LoadingProgress()
-            .width(24)
-            .height(24)
-            .color(AuthTheme.primary)
-          Text(L10n.authLoginLoading)
-            .fontSize(14)
-            .fontColor(AuthTheme.textMain)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        // 取消连接：中断在途直连探测/P2P 建连（对齐 Flutter 加载对话框的取消）
-        DialogTextButton({
-          label: L10n.cancel,
-          action: () => this.vm.cancelTap()
-        })
-      }
-      .padding({ left: 18, right: 18, top: 16, bottom: 10 })
-      .borderRadius(12)
-      .backgroundColor(AuthTheme.dialogBg)
+      this.TapLoadingDialog()
     }
     .width('100%')
     .height('100%')
