@@ -17,23 +17,8 @@ extension PcFileExplorerViewMode on PcFileExplorerController {
     }
   }
 
-  /// 从缓存加载视图模式
-  void _loadViewMode() {
-    final cachedMode = CacheManager().getString(CacheKeys.fileViewMode);
-    if (cachedMode != null &&
-        (cachedMode == 'grid' ||
-            cachedMode == 'list' ||
-            cachedMode == 'large_grid')) {
-      viewMode.value = cachedMode;
-    }
-  }
-
-  /// 切换视图模式
+  /// 切换视图模式（与手机端共用同一份全局状态，并持久化到本地）
   void toggleViewMode(String mode) {
-    if (mode == 'grid' || mode == 'list' || mode == 'large_grid') {
-      viewMode.value = mode;
-      // 保存到缓存
-      CacheManager().setString(CacheKeys.fileViewMode, mode);
-    }
+    FileViewModeService.instance.setMode(mode);
   }
 }

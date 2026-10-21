@@ -1,15 +1,14 @@
 import 'package:get/get.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' show Offset, Rect;
-import '../../../../utils/cache_manager.dart';
 import '../../../../utils/dialog_util.dart';
 import '../../../../utils/toast_util.dart';
 import '../../../../core/user/current_user_controller.dart';
 import 'file_controller.dart';
+import 'file_view_mode_service.dart';
 export 'file_controller.dart';
 import '../service/file_api_service.dart';
 
-part 'parts/pc_lifecycle.dart';
 part 'parts/pc_layout.dart';
 part 'parts/pc_view.dart';
 part 'parts/pc_drag_select.dart';
@@ -55,18 +54,6 @@ class PcFileExplorerController extends FileController {
   double _dragStartScrollOffset = 0;
   Set<String>? _dragSelectionBaseline;
   final pointerInView = false.obs;
-
-  @override
-  void onInit() {
-    super.onInit();
-    PcFileExplorerLifecycle(this)._onControllerInit();
-  }
-
-  @override
-  void onClose() {
-    PcFileExplorerLifecycle(this)._onControllerClose();
-    super.onClose();
-  }
 
   void openFilePanel() {
     rightPanel.value = 'files';

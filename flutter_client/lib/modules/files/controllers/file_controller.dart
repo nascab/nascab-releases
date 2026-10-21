@@ -20,6 +20,7 @@ import '../../music/play_service/controller/music_play_service_controller.dart';
 import '../../transfer/controllers/download_controller.dart';
 import 'dart:async';
 import 'file_clipboard_controller.dart';
+import 'file_view_mode_service.dart';
 import '../service/file_watcher_service.dart';
 import '../views/folder_picker_dialog.dart';
 import '../views/running_task_list_dialog.dart';
@@ -81,13 +82,13 @@ class FileController extends GetxController {
   final searchScope = 'current'.obs; // current/global
   final globalSearchItems = <Map<String, dynamic>>[].obs;
   final globalSearchLoading = false.obs;
-  final viewMode = 'grid'.obs; // 视图模式：grid/large_grid/list
+  // 视图模式：grid/large_grid/list（全局共享并本地持久化，见 FileViewModeService）
+  RxString get viewMode => FileViewModeService.instance.mode;
   final showHidden = false.obs; //是否显示隐藏文件
   final onlyShowDir = false.obs; //是否只拉取目录 选择模式下设置为true
   // 服务器根目录列表（始终显示在左侧树的“服务器”分组）
   final serverRoots = <Map<String, dynamic>>[].obs;
   static const String _sortKey = 'file_sort_mode';
-  static const String _viewKey = 'file_view_mode';
   static const String _showHiddenKey = 'file_show_hidden';
 
   /// 当前所在模块：normal/favorites/recent

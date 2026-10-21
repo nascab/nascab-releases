@@ -68,10 +68,9 @@ extension FileControllerSort on FileController {
     _saveSortMode(mode);
   }
 
-  /// 设置视图模式（移动端：图标/大图标/列表；PC端未来也可复用）
+  /// 设置视图模式（移动端：图标/大图标/列表；PC端复用同一份全局状态）
   void setViewMode(String mode) {
-    viewMode.value = mode;
-    _saveViewMode(mode);
+    FileViewModeService.instance.setMode(mode);
   }
 
   void applySort() {
@@ -156,23 +155,6 @@ extension FileControllerSort on FileController {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(FileController._sortKey, mode);
-    } catch (_) {}
-  }
-
-  Future<void> _loadViewMode() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final v = prefs.getString(FileController._viewKey);
-      if (v != null && v.isNotEmpty) {
-        viewMode.value = v;
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _saveViewMode(String mode) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(FileController._viewKey, mode);
     } catch (_) {}
   }
 

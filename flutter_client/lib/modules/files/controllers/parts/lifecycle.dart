@@ -2,9 +2,10 @@ part of '../file_controller.dart';
 
 extension FileControllerLifecycle on FileController {
   void _onControllerInit() {
+    // 确保全局显示模式服务已注册并完成本地读取
+    FileViewModeService.ensure();
     _fileWatcher = FileWatcherService(onFileChange: _handleFileChange);
     _loadSortMode();
-    _loadViewMode();
     _loadShowHidden();
     if (autoLoadRoot) {
       listDirectory('', null, sourceType: initialSourceType);

@@ -190,7 +190,7 @@ class _AppFileBrowserState extends State<AppFileBrowser> {
               onViewPressed: () {
                 const modes = ['grid', 'large_grid', 'list'];
                 final idx = modes.indexOf(ctrl.viewMode.value);
-                ctrl.viewMode.value = modes[(idx + 1) % modes.length];
+                ctrl.setViewMode(modes[(idx + 1) % modes.length]);
               },
             ),
             const CustomDivider(height: 1),
