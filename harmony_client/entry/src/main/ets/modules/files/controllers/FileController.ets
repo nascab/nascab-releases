@@ -7,6 +7,7 @@ import { DialogUtil } from '../../../common/DialogUtil';
 import { CurrentUserStore } from '../../../core/user/CurrentUserStore';
 import { FileApiService } from '../service/FileApiService';
 import { FileWatcherService, FileChangeData } from '../service/FileWatcherService';
+import { FileViewModeStore } from '../service/FileViewModeStore';
 import { FileOpener } from '../service/FileOpener';
 import { FileClipboard } from './FileClipboard';
 import {
@@ -54,7 +55,8 @@ export class FileController {
   @Trace searchScope: string = 'current'; // current/global/subtree
   @Trace globalSearchItems: FileItem[] = [];
   @Trace globalSearchLoading: boolean = false;
-  @Trace viewMode: string = 'grid'; // grid/large_grid/list
+  /** 显示模式（grid/large_grid/list）：全局共享 + 本地持久化，见 FileViewModeStore */
+  @Trace viewMode: string = 'grid';
   @Trace showHidden: boolean = false;
   @Trace onlyShowDir: boolean = false;
   // ===== 服务器根目录（含自定义路径） =====
@@ -81,6 +83,11 @@ export class FileController {
   /** 页面注入的 UI 钩子 */
   uiHook: FileUiHook | undefined = undefined;
 
+  /** 显示模式全局状态变更回调：跨页面同步模式 */
+  private readonly viewModeListener: (mode: string) => void = (mode: string): void => {
+    this.viewMode = mode;
+  };
+
   constructor(autoLoadRoot: boolean = true, listApiPath: string = '/api/file/list',
     searchApiPath: string = '/api/file/search', showRootCustomPathEntry: boolean = true) {
     this.autoLoadRoot = autoLoadRoot;
@@ -97,7 +104,10 @@ export class FileController {
       (_e: Object): void => {
       });
     void this.loadSortMode();
-    void this.loadViewMode();
+    const viewModeStore = FileViewModeStore.getInstance();
+    viewModeStore.ensureLoaded();
+    this.viewMode = viewModeStore.viewMode;
+    viewModeStore.addListener(this.viewModeListener);
     void this.loadShowHidden();
     if (this.autoLoadRoot) {
       void this.listDirectory('', 'normal', this.currentSourceType);
@@ -105,6 +115,7 @@ export class FileController {
   }
 
   close(): void {
+    FileViewModeStore.getInstance().removeListener(this.viewModeListener);
     this.fileWatcher?.disconnect();
     if (this.globalSearchTimer >= 0) {
       clearTimeout(this.globalSearchTimer);
@@ -498,10 +509,13 @@ export class FileController {
     void PreferencesStore.getInstance().setString('file_sort_mode', mode);
   }
 
-  /** 设置视图模式（图标/大图标/列表），持久化 */
+  /** 设置视图模式（图标/大图标/列表）：写入全局共享状态，其余页面同步并持久化 */
   setViewMode(mode: string): void {
+    if (this.viewMode === mode) {
+      return;
+    }
     this.viewMode = mode;
-    void PreferencesStore.getInstance().setString('file_view_mode', mode);
+    FileViewModeStore.getInstance().setViewMode(mode);
   }
 
   applySort(): void {
@@ -544,16 +558,6 @@ export class FileController {
       if (v !== undefined && v.length > 0) {
         this.sortMode = v;
         this.applySort();
-      }
-    } catch (_e) {
-    }
-  }
-
-  private async loadViewMode(): Promise<void> {
-    try {
-      const v = PreferencesStore.getInstance().getString('file_view_mode');
-      if (v !== undefined && v.length > 0) {
-        this.viewMode = v;
       }
     } catch (_e) {
     }
