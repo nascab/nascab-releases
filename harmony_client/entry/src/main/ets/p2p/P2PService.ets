@@ -5,10 +5,11 @@ import { NetworkConfig } from '../core/network/NetworkConfig';
 import { PreferencesStore } from '../core/storage/PreferencesStore';
 import { CacheKeys } from '../core/storage/CacheKeys';
 import { ServerStorageService } from '../core/storage/ServerStorageService';
-import { ApiEnvelope, JsonCodec, P2pSessionJson } from '../common/JsonTypes';
+import { ApiEnvelope, IceServerJson, JsonCodec, P2pSessionJson } from '../common/JsonTypes';
 import { HeaderMap } from '../common/HeaderMap';
+import { AppEventBus, EVENT_CONNECT_CHANNEL_CHANGED } from '../common/AppEventBus';
 import { WebSocketSignaling, WebSocketSignalingDelegate } from './WebSocketSignaling';
-import { WebRTCClient } from './WebRTCClient';
+import { TransportStatsResult, WebRTCClient } from './WebRTCClient';
 import { WebRTCNativeBridge } from './WebRTCNativeBridge';
 import { P2pSignalingBinary } from './P2pSignalingBinary';
 import { LocalPlaybackProxy } from './LocalPlaybackProxy';
@@ -218,6 +219,16 @@ export class P2PService implements P2pRequestSender {
         throw P2PError.wsError('p2p_connect_stale');
       }
       console.error(`[P2P] signaling ready: iceServers=${JSON.stringify(iceServers)}`);
+      // 对齐 Flutter：初始化前先解析中继地址并按 ICE 偏好预置传输类型，
+      // 中继模式连接完成后 UI 即可显示中继节点地址
+      this.updateRelayAddress(this.extractTurnServerAddress(iceServers));
+      if (requestedPref === P2pIcePreference.RELAY_ONLY) {
+        this.updateTransportKind(P2pTransportKind.RELAY);
+      } else if (requestedPref === P2pIcePreference.DIRECT_ONLY) {
+        this.updateTransportKind(P2pTransportKind.DIRECT);
+      } else {
+        this.updateTransportKind(P2pTransportKind.UNKNOWN);
+      }
       await this.startWebRTC(sid, iceServers, epoch, requestedPref);
       if (epoch !== this.connectEpoch) {
         throw P2PError.wsError('p2p_connect_stale');
@@ -228,6 +239,9 @@ export class P2PService implements P2pRequestSender {
       this.connectionState = P2PConnectionState.CONNECTED;
       this.reconnectAttempts = 0;
       this.activeIcePreference = requestedPref;
+
+      // 对齐 Flutter：连接后 800ms 用 ICE 统计确认真实传输类型（auto 偏好下可能走中继）
+      this.scheduleTransportKindConfirm(epoch);
 
       APIClient.getInstance().setBaseUrl(NetworkConfig.P2P_BASE_URL);
       await LocalPlaybackProxy.getInstance().start();
@@ -382,9 +396,13 @@ export class P2PService implements P2pRequestSender {
       throw P2PError.invalidSession();
     }
 
-    const rtc = new WebRTCClient(sessionId, iceServers, (msg: SignalingOfferMsg) => {
+    const relayOnly = requestedPref === P2pIcePreference.RELAY_ONLY;
+    const directOnly = requestedPref === P2pIcePreference.DIRECT_ONLY;
+    // 纯直连探测需在本端滤除 TURN，否则仍会生成 relay 候选并抢跑（对齐 Flutter）
+    const rtcIceServers = directOnly ? this.filterDirectOnlyIceServers(iceServers) : iceServers;
+    const rtc = new WebRTCClient(sessionId, rtcIceServers, (msg: SignalingOfferMsg) => {
       ws.sendOffer(msg);
-    }, requestedPref === P2pIcePreference.RELAY_ONLY);
+    }, relayOnly, directOnly);
     this.rtcClient = rtc;
 
     // ICE 候选上行：对齐 Flutter 端 webrtc:candidate 信令
@@ -413,6 +431,136 @@ export class P2PService implements P2pRequestSender {
     await rtc.start(channels);
   }
 
+  /** 从 ICE servers 中提取 turn/turns 中继地址（对齐 Flutter _extractTurnServerAddress） */
+  private extractTurnServerAddress(iceServers: Object[]): string {
+    for (let i = 0; i < iceServers.length; i++) {
+      const urls = this.iceServerUrls(iceServers[i]);
+      for (let j = 0; j < urls.length; j++) {
+        const url = urls[j];
+        const prefixLen = P2PService.turnUrlPrefixLength(url);
+        if (prefixLen === 0) {
+          continue;
+        }
+        // 去掉 scheme 与 user:pass@ 认证段，再截掉 ?transport=... 查询参数
+        let hostPart = url.substring(prefixLen);
+        const atIndex = hostPart.lastIndexOf('@');
+        if (atIndex >= 0) {
+          hostPart = hostPart.substring(atIndex + 1);
+        }
+        const qIndex = hostPart.indexOf('?');
+        if (qIndex >= 0) {
+          hostPart = hostPart.substring(0, qIndex);
+        }
+        return hostPart.trim();
+      }
+    }
+    return '';
+  }
+
+  /** 提取单个 ICE server 的 urls 列表 */
+  private iceServerUrls(server: Object): string[] {
+    const json = JsonCodec.parse<IceServerJson>(server);
+    const urls = json.urls;
+    const list: string[] = [];
+    if (urls === undefined || urls === null) {
+      return list;
+    }
+    if (typeof urls === 'string') {
+      const u = urls.trim();
+      if (u.length > 0) {
+        list.push(u);
+      }
+    } else if (Array.isArray(urls)) {
+      const arr = urls as string[];
+      for (let i = 0; i < arr.length; i++) {
+        const u = `${arr[i] ?? ''}`.trim();
+        if (u.length > 0) {
+          list.push(u);
+        }
+      }
+    }
+    return list;
+  }
+
+  /** turn:/turns: URL 返回 scheme 长度，非 TURN 地址返回 0 */
+  private static turnUrlPrefixLength(url: string): number {
+    const lower = url.trim().toLowerCase();
+    if (lower.startsWith('turns:')) {
+      return 6;
+    }
+    if (lower.startsWith('turn:')) {
+      return 5;
+    }
+    return 0;
+  }
+
+  /** 纯直连探测时剔除 TURN 服务器，避免本端生成 relay 候选（对齐 Flutter 本地滤除 TURN） */
+  private filterDirectOnlyIceServers(iceServers: Object[]): Object[] {
+    const out: Object[] = [];
+    for (let i = 0; i < iceServers.length; i++) {
+      const urls = this.iceServerUrls(iceServers[i]);
+      let hasTurn = false;
+      for (let j = 0; j < urls.length; j++) {
+        if (P2PService.turnUrlPrefixLength(urls[j]) > 0) {
+          hasTurn = true;
+          break;
+        }
+      }
+      if (!hasTurn) {
+        out.push(iceServers[i]);
+      }
+    }
+    return out;
+  }
+
+  private updateRelayAddress(addr: string): void {
+    const next = addr.trim();
+    if (this.relayAddress === next) {
+      return;
+    }
+    this.relayAddress = next;
+    AppEventBus.emit(EVENT_CONNECT_CHANNEL_CHANGED);
+  }
+
+  private updateTransportKind(kind: P2pTransportKind): void {
+    if (this.transportKind === kind) {
+      return;
+    }
+    this.transportKind = kind;
+    AppEventBus.emit(EVENT_CONNECT_CHANNEL_CHANGED);
+  }
+
+  /** 连接后延迟确认实际传输类型（对齐 Flutter 的 800ms getTransportStats） */
+  private scheduleTransportKindConfirm(epoch: number): void {
+    // 多次探测：直连打洞失败回退中继时，relay 候选延迟 1.5s 才发送，
+    // 800ms 时统计可能尚无结论；后续探测确保回退中继后能正确刷新类型与地址
+    const delays: number[] = [800, 2000, 5000];
+    for (let i = 0; i < delays.length; i++) {
+      setTimeout(() => {
+        this.confirmTransportKindOnce(epoch);
+      }, delays[i]);
+    }
+  }
+
+  private confirmTransportKindOnce(epoch: number): void {
+    const rtc = this.rtcClient;
+    if (!rtc || epoch !== this.connectEpoch || !this.isConnected) {
+      return;
+    }
+    rtc.getTransportStats().then((stats: TransportStatsResult): void => {
+      if (epoch !== this.connectEpoch || this.rtcClient !== rtc) {
+        return;
+      }
+      if (stats.type === 'relay') {
+        this.updateTransportKind(P2pTransportKind.RELAY);
+      } else if (stats.type === 'host' || stats.type === 'srflx' || stats.type === 'prflx') {
+        this.updateTransportKind(P2pTransportKind.DIRECT);
+      }
+    }).catch((_e: Object): void => {
+      // 统计失败时保留按 ICE 偏好预置的类型
+    });
+  }
+
   private async cleanupConnection(disableReconnect: boolean): Promise<void> {
     if (disableReconnect) {
       this.allowReconnect = false;
@@ -427,7 +575,8 @@ export class P2PService implements P2pRequestSender {
       this.signaling.disconnect();
       this.signaling = undefined;
     }
-    this.relayAddress = '';
+    this.updateRelayAddress('');
+    this.updateTransportKind(P2pTransportKind.UNKNOWN);
   }
 
   private scheduleReconnect(): void {

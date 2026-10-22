@@ -11,6 +11,7 @@ import { DevConnectMode } from '../../../core/network/DevConnectMode';
 import { PhotoBackupController } from '../../photo_backup/controllers/PhotoBackupController';
 import { ConnectChannelManager } from '../../../core/network/ConnectChannelManager';
 import { ToastUtil } from '../../../common/ToastUtil';
+import { AppEventBus, EVENT_CONNECT_CHANNEL_CHANGED } from '../../../common/AppEventBus';
 
 /** 用户信息弹窗：对应 Flutter UserInfoDialog */
 @ComponentV2
@@ -26,6 +27,19 @@ export struct HomeUserInfoDialog {
   @Local switchingMode: boolean = false;
   /** 通道切换计数：通道值/当前勾选依赖此刷新 */
   @Local channelRevision: number = 0;
+
+  aboutToAppear(): void {
+    AppEventBus.on(EVENT_CONNECT_CHANNEL_CHANGED, this.onChannelChanged);
+  }
+
+  aboutToDisappear(): void {
+    AppEventBus.off(EVENT_CONNECT_CHANNEL_CHANGED, this.onChannelChanged);
+  }
+
+  /** P2P 建连/断开、通道地址变化时刷新展示（含中继地址） */
+  private onChannelChanged = (_data: string): void => {
+    this.channelRevision++;
+  };
 
   private currentUser() {
     return CurrentUserStore.getInstance().current;

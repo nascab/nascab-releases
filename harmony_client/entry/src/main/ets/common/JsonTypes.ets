@@ -72,6 +72,20 @@ export class P2pSessionJson {
   sessionId?: string;
 }
 
+/** ICE 服务器（信令下发的 iceServers 元素），用于解析 turn/turns 中继地址 */
+export class IceServerJson {
+  urls?: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+/** WebRTC 统计中的 ICE 候选信息（candidateType 未在 webrtc.d.ts 中声明） */
+export class IceCandidateStatsJson {
+  id?: string;
+  type?: string;
+  candidateType?: string;
+}
+
 export class UdpDiscoveryJson {
   service?: string;
   host?: string;

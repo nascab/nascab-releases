@@ -1,4 +1,5 @@
 import { util } from '@kit.ArkTS';
+import webrtc from '@ohos/webrtc';
 import { WebRTCNativeBridge } from './WebRTCNativeBridge';
 import {
   P2pApiResponse,
@@ -11,7 +12,7 @@ import {
   P2PError,
 } from './P2pProtocol';
 import { HeaderMap } from '../common/HeaderMap';
-import { IceCandidateJson, P2pControlPayload, SignalingDecoded } from '../common/JsonTypes';
+import { IceCandidateJson, IceCandidateStatsJson, JsonCodec, P2pControlPayload, SignalingDecoded } from '../common/JsonTypes';
 import { SignalingOfferMsg } from './P2pSignalingBinary';
 
 const BODY_CHUNK_SIZE = 64 * 1024; // 对齐 Flutter _bodyChunkSize(api)
@@ -57,6 +58,8 @@ export class WebRTCClient {
   iceServers: Object[];
   /** ICE 传输策略：true 时仅走中继（对齐 Flutter relayOnly → iceTransportPolicy: relay） */
   relayOnly: boolean;
+  /** 纯直连探测：丢弃对端发来的 relay 候选，防止中继对抢先被 nominate */
+  directOnly: boolean;
   sendOffer: SignalingSendCallback;
   private pcHandle: number = -1;
   private channels: Map<P2pRtcChannel, ChannelState> = new Map();
@@ -69,10 +72,11 @@ export class WebRTCClient {
   private heartbeatTimerId: number = -1;
 
   constructor(sessionId: string, iceServers: Object[], sendOffer: SignalingSendCallback,
-    relayOnly: boolean = false) {
+    relayOnly: boolean = false, directOnly: boolean = false) {
     this.sessionId = sessionId;
     this.iceServers = iceServers;
     this.relayOnly = relayOnly;
+    this.directOnly = directOnly;
     this.sendOffer = sendOffer;
     WebRTCNativeBridge.init(
       (channelHandle, data) => this.onBinaryMessage(channelHandle, data),
@@ -82,7 +86,9 @@ export class WebRTCClient {
 
   async start(requestedChannels: P2pRtcChannel[]): Promise<void> {
     console.error(`[P2P] start: channels=${requestedChannels.join(',')}, iceServers=${JSON.stringify(this.iceServers)}`);
-    this.pcHandle = WebRTCNativeBridge.createPeerConnection(this.iceServers, this.relayOnly);
+    // 强制中继时中继候选需立即发送；其余模式延迟发送，给直连候选先发优势
+    this.pcHandle = WebRTCNativeBridge.createPeerConnection(
+      this.iceServers, this.relayOnly, !this.relayOnly);
     this.pendingReadyCount = requestedChannels.length;
     this.readyPromise = new Promise<void>((resolve, reject) => {
       this.readyResolve = resolve;
@@ -142,6 +148,12 @@ export class WebRTCClient {
     } else if (msgType === 'webrtc:candidate') {
       const c = msg.candidate;
       if (!c) {
+        return;
+      }
+      // 纯直连探测：丢弃对端中继候选（对端 PC 仍配置 TURN，会照常发出 relay），
+      // 防止 client-host × server-relay 中继对抢跑导致直连探测误判不可用
+      if (this.directOnly && c.candidate.includes(' typ relay')) {
+        console.error('[P2P] directOnly 探测：丢弃对端中继候选');
         return;
       }
       if (!this.remoteDescriptionApplied) {
@@ -474,10 +486,71 @@ export class WebRTCClient {
     return found;
   }
 
+  /**
+   * 读取 ICE 选中候选对的候选类型，判定实际传输方式（对齐 Flutter getTransportStats）：
+   * 任一端为 relay 即为中继；host/srflx/prflx 为直连；无法判定返回 unknown。
+   */
   async getTransportStats(): Promise<TransportStatsResult> {
-    const stats = new TransportStatsResult();
-    stats.type = 'relay';
-    return stats;
+    const result = new TransportStatsResult();
+    result.type = 'unknown';
+    try {
+      const report = await WebRTCNativeBridge.getStats(this.pcHandle);
+      if (!report || !report.stats) {
+        return result;
+      }
+      const succeededPairs: webrtc.RTCIceCandidatePairStats[] = [];
+      const candidateTypes: Map<string, string> = new Map<string, string>();
+      report.stats.forEach((stat: webrtc.RTCStats) => {
+        const json = JsonCodec.parse<IceCandidateStatsJson>(stat as Object);
+        const statType = json.type ?? stat.type;
+        if (statType === 'candidate-pair') {
+          const candidatePair = stat as webrtc.RTCIceCandidatePairStats;
+          if (candidatePair.state === 'succeeded') {
+            succeededPairs.push(candidatePair);
+          }
+        } else if (statType === 'local-candidate' || statType === 'remote-candidate') {
+          const candidateType = (json.candidateType ?? '').toLowerCase();
+          if (candidateType.length > 0 && json.id !== undefined) {
+            candidateTypes.set(json.id, candidateType);
+          }
+        }
+      });
+      if (succeededPairs.length === 0) {
+        return result;
+      }
+      // 优先取 nominated 的候选对（实际使用路径），否则取收发字节最多的
+      //（对齐 Flutter getTransportStats）
+      let selectedPair = succeededPairs[0];
+      for (let i = 0; i < succeededPairs.length; i++) {
+        if (succeededPairs[i].nominated === true) {
+          selectedPair = succeededPairs[i];
+          break;
+        }
+      }
+      if (selectedPair.nominated !== true) {
+        let bestBytes = -1;
+        for (let i = 0; i < succeededPairs.length; i++) {
+          const pair = succeededPairs[i];
+          const bytes = (pair.bytesSent ?? 0) + (pair.bytesReceived ?? 0);
+          if (bytes > bestBytes) {
+            bestBytes = bytes;
+            selectedPair = pair;
+          }
+        }
+      }
+      const localType = candidateTypes.get(selectedPair.localCandidateId) ?? '';
+      const remoteType = candidateTypes.get(selectedPair.remoteCandidateId) ?? '';
+      if (localType === 'relay' || remoteType === 'relay') {
+        result.type = 'relay';
+      } else if (localType.length > 0) {
+        result.type = localType;
+      } else if (remoteType.length > 0) {
+        result.type = remoteType;
+      }
+    } catch (_e) {
+      // 统计失败保持 unknown，由调用方沿用 ICE 偏好预置的类型
+    }
+    return result;
   }
 
   close(): void {
@@ -509,5 +582,5 @@ export class WebRTCClient {
 }
 
 export class TransportStatsResult {
-  type: string = 'relay';
+  type: string = 'unknown';
 }

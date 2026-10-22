@@ -5,6 +5,9 @@ export type BinaryMessageHandler = (channelHandle: number, data: ArrayBuffer) =>
 export type ChannelReadyHandler = (channelName: string) => void;
 export type IceCandidateHandler = (candidate: string, sdpMid: string, sdpMLineIndex: number) => void;
 
+/** 中继候选延迟发送时长（对齐 Flutter _relayCandidateDelay = 1500ms） */
+const RELAY_CANDIDATE_DELAY_MS = 1500;
+
 interface BridgeChannel {
   label: string;
   dc: webrtc.RTCDataChannel;
@@ -38,7 +41,8 @@ export class WebRTCNativeBridge {
     WebRTCNativeBridge.iceHandler = handler;
   }
 
-  static createPeerConnection(iceServers: Object[], relayOnly: boolean = false): number {
+  static createPeerConnection(iceServers: Object[], relayOnly: boolean = false,
+    delayRelayCandidates: boolean = true): number {
     const factory = WebRTCNativeBridge.factory;
     if (!factory) {
       return -1;
@@ -53,19 +57,51 @@ export class WebRTCNativeBridge {
     const handle = WebRTCNativeBridge.nextHandle++;
     WebRTCNativeBridge.lastPcHandle = handle;
     WebRTCNativeBridge.pcs.set(handle, pc);
-    // ICE 候选上行：对齐 Flutter 端 onCandidate -> webrtc:candidate 信令
+    // ICE 候选上行：对齐 Flutter 端 onCandidate -> webrtc:candidate 信令。
+    // 中继候选延迟发送：TURN 与信令同机时 relay 连通性检查几乎瞬时完成，
+    // 会先于直连候选被 nominate（nominate 后不抢占），导致直连可用仍永久走中继。
+    // 延迟期间若已直连则直接丢弃该中继候选（对齐 Flutter p2p_rtc_stub.dart）。
     pc.onicecandidate = (event: webrtc.RTCPeerConnectionIceEvent) => {
       const c = event.candidate;
-      if (c && c.candidate && c.candidate.length > 0) {
-        console.error(`[P2P] local candidate: ${(c.candidate ?? '').substring(0, 60)}`);
-        WebRTCNativeBridge.iceHandler?.(
-          c.candidate,
-          c.sdpMid ?? '',
-          c.sdpMLineIndex ?? 0
-        );
+      if (!c || !c.candidate || c.candidate.length === 0) {
+        return;
+      }
+      const candidate = c.candidate;
+      const sdpMid = c.sdpMid ?? '';
+      const sdpMLineIndex = c.sdpMLineIndex ?? 0;
+      const emit = (): void => {
+        if (WebRTCNativeBridge.pcs.get(handle) !== pc) {
+          return;
+        }
+        WebRTCNativeBridge.iceHandler?.(candidate, sdpMid, sdpMLineIndex);
+      };
+      console.error(`[P2P] local candidate: ${candidate.substring(0, 60)}`);
+      if (delayRelayCandidates && candidate.includes(' typ relay')) {
+        setTimeout(() => {
+          if (WebRTCNativeBridge.pcs.get(handle) !== pc) {
+            return;
+          }
+          if (pc.connectionState === 'connected') {
+            console.error('[P2P] 跳过中继候选（已直连）');
+            return;
+          }
+          console.error('[P2P] 延迟发送中继候选');
+          emit();
+        }, RELAY_CANDIDATE_DELAY_MS);
+      } else {
+        emit();
       }
     };
     return handle;
+  }
+
+  /** 透传 RTCPeerConnection.getStats()，用于判定实际传输类型（relay/host） */
+  static getStats(pcHandle: number): Promise<webrtc.RTCStatsReport> | undefined {
+    const pc = WebRTCNativeBridge.pcs.get(pcHandle);
+    if (!pc) {
+      return undefined;
+    }
+    return pc.getStats();
   }
 
   static createDataChannel(pcHandle: number, label: string): number {
