@@ -100,6 +100,9 @@ export struct DockerMainPage {
     Row({ space: 10 }) {
       BorderedIconButton({
         icon: $r('sys.symbol.arrow_clockwise'),
+        // 顶栏为深色 appBar 底色，边框与图标统一使用浅色前景
+        strokeColor: AppTheme.withAlpha(this.palette().appBarFg, 0.35),
+        iconColor: this.palette().appBarFg,
         onTap: (): void => {
           void this.ctrl.refreshAll(false);
         }

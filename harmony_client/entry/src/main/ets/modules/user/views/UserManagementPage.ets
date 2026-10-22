@@ -127,6 +127,9 @@ export struct UserManagementPage {
   HeaderActions() {
     BorderedIconButton({
       icon: $r('sys.symbol.plus'),
+      // 顶栏为深色 appBar 底色，边框与图标统一使用浅色前景
+      strokeColor: AppTheme.withAlpha(this.palette().appBarFg, 0.35),
+      iconColor: this.palette().appBarFg,
       onTap: (): void => {
         this.openCreateDialog();
       }

@@ -3,6 +3,7 @@ import { AppTheme, ThemePalette } from '../../../core/theme/AppTheme';
 import { ThemeManager } from '../../../core/theme/ThemeManager';
 import { PageScaffold } from '../../../common/PageScaffold';
 import { EmptyState } from '../../../common/components/EmptyState';
+import { BorderedIconButton } from '../../../common/components/BorderedIconButton';
 import { AppEventBus } from '../../../common/AppEventBus';
 import { NavUtil } from '../../../common/NavUtil';
 import {
@@ -121,31 +122,40 @@ export struct EncryptedSpaceMainPage {
 
   @Builder
   HeaderActions() {
-    Row({ space: 14 }) {
-      SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-        .fontSize(22)
-        .fontColor([this.th().appBarFg])
-        .onClick(() => {
+    Row({ space: 10 }) {
+      // 顶栏为深色 appBar 底色，边框与图标统一使用浅色前景
+      BorderedIconButton({
+        icon: $r('sys.symbol.arrow_clockwise'),
+        strokeColor: AppTheme.withAlpha(this.th().appBarFg, 0.35),
+        iconColor: this.th().appBarFg,
+        onTap: (): void => {
           void this.ctrl.refreshList(true);
-        })
-      SymbolGlyph($r('sys.symbol.plus'))
-        .fontSize(22)
-        .fontColor([this.th().appBarFg])
-        .onClick(() => {
+        }
+      })
+      BorderedIconButton({
+        icon: $r('sys.symbol.plus'),
+        strokeColor: AppTheme.withAlpha(this.th().appBarFg, 0.35),
+        iconColor: this.th().appBarFg,
+        onTap: (): void => {
           runEncryptedCreateSpaceFlow(this.ctrl);
-        })
-      SymbolGlyph($r('sys.symbol.folder'))
-        .fontSize(22)
-        .fontColor([this.th().appBarFg])
-        .onClick(() => {
+        }
+      })
+      BorderedIconButton({
+        icon: $r('sys.symbol.folder'),
+        strokeColor: AppTheme.withAlpha(this.th().appBarFg, 0.35),
+        iconColor: this.th().appBarFg,
+        onTap: (): void => {
           runEncryptedImportSpaceFlow(this.ctrl);
-        })
-      SymbolGlyph($r('sys.symbol.list_bullet'))
-        .fontSize(22)
-        .fontColor([this.th().appBarFg])
-        .onClick(() => {
+        }
+      })
+      BorderedIconButton({
+        icon: $r('sys.symbol.list_bullet'),
+        strokeColor: AppTheme.withAlpha(this.th().appBarFg, 0.35),
+        iconColor: this.th().appBarFg,
+        onTap: (): void => {
           showEncryptedExportTasksSheet(this.ctrl);
-        })
+        }
+      })
     }
   }
 

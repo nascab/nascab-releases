@@ -132,6 +132,9 @@ export struct ShareServerMainPage {
     if (this.isAdmin()) {
       BorderedIconButton({
         icon: $r('sys.symbol.gearshape'),
+        // 顶栏为深色 appBar 底色，边框与图标统一使用浅色前景
+        strokeColor: AppTheme.withAlpha(this.palette().appBarFg, 0.35),
+        iconColor: this.palette().appBarFg,
         onTap: (): void => {
           this.openPortsSettings();
         }

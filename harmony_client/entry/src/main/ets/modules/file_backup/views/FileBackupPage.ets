@@ -6,6 +6,7 @@ import { PageScaffold } from '../../../common/PageScaffold';
 import { DialogUtil } from '../../../common/DialogUtil';
 import { NavUtil } from '../../../common/NavUtil';
 import { EmptyState } from '../../../common/components/EmptyState';
+import { BorderedIconButton } from '../../../common/components/BorderedIconButton';
 import { GlassCard } from '../../../common/components/GlassCard';
 import { FileBackupController } from '../controllers/FileBackupController';
 import {
@@ -78,24 +79,33 @@ export struct FileBackupPage {
 
   @Builder
   TitleActions() {
-    SymbolGlyph($r('sys.symbol.questionmark_circle'))
-      .fontSize(22)
-      .fontColor([AppTheme.current().appBarFg])
-      .onClick((): void => {
-        this.showHelp();
+    Row({ space: 10 }) {
+      // 顶栏为深色 appBar 底色，边框与图标统一使用浅色前景
+      BorderedIconButton({
+        icon: $r('sys.symbol.questionmark_circle'),
+        strokeColor: AppTheme.withAlpha(AppTheme.current().appBarFg, 0.35),
+        iconColor: AppTheme.current().appBarFg,
+        onTap: (): void => {
+          this.showHelp();
+        }
       })
-    SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-      .fontSize(22)
-      .fontColor([AppTheme.current().appBarFg])
-      .onClick((): void => {
-        void this.ctrl.refreshList(true);
+      BorderedIconButton({
+        icon: $r('sys.symbol.arrow_clockwise'),
+        strokeColor: AppTheme.withAlpha(AppTheme.current().appBarFg, 0.35),
+        iconColor: AppTheme.current().appBarFg,
+        onTap: (): void => {
+          void this.ctrl.refreshList(true);
+        }
       })
-    SymbolGlyph($r('sys.symbol.plus'))
-      .fontSize(22)
-      .fontColor([AppTheme.current().appBarFg])
-      .onClick((): void => {
-        this.onCreate();
+      BorderedIconButton({
+        icon: $r('sys.symbol.plus'),
+        strokeColor: AppTheme.withAlpha(AppTheme.current().appBarFg, 0.35),
+        iconColor: AppTheme.current().appBarFg,
+        onTap: (): void => {
+          this.onCreate();
+        }
       })
+    }
   }
 
   @Builder
