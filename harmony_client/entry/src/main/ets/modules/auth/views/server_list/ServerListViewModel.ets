@@ -768,8 +768,15 @@ export class ServerListViewModel {
         return;
       } catch (e) {
         const msg = ServerListViewModel.errorMessage(e);
+        if (this.tapCancelled) {
+          throw new Error(msg);
+        }
         if (msg.includes('P2P_DEVICE_OFFLINE') && attempt < maxRetries) {
           await ServerListViewModel.sleep(retryDelayMs);
+          continue;
+        }
+        // 建连被后台通道重检等并发操作打断（代际失效）：立即重试，不把内部标记暴露给用户
+        if (msg.includes('p2p_connect_stale') && attempt < maxRetries) {
           continue;
         }
         throw new Error(ServerListViewModel.errorMessage(e));

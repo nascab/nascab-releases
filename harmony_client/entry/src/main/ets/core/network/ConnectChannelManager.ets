@@ -314,6 +314,11 @@ export class ConnectChannelManager {
   /** 按优先级探测所有通道：直连 > P2P 直连 > P2P 中继 */
   private static async probePreferredChannel(infos: ServerInfo[], reconnectCurrentP2p: boolean,
     failedBaseUrl: string): Promise<boolean> {
+    // 有在途 P2P 建连（点击服务器/配对码添加）时避让：后台主动 disconnect 会让
+    // 在途建连代际失效并抛 p2p_connect_stale，通道选择交由建连流程自行完成
+    if (P2PService.getInstance().isConnectInFlight()) {
+      return false;
+    }
     const api = APIClient.getInstance();
     const expectedServerId = api.state.serverId.trim();
     const failed = ConnectChannelManager.normalizeBaseUrl(failedBaseUrl);
@@ -366,11 +371,14 @@ export class ConnectChannelManager {
           return true;
         }
       }
-      // 现有 P2P 连接已失效：强制断开后按原优先级重建
-      try {
-        p2p.disconnect();
-      } catch (_e) {
-        // 忽略断开异常
+      // 现有 P2P 连接已失效：强制断开后按原优先级重建。
+      // 直连探测期间可能刚启动了新的 P2P 建连，此时不能抢断
+      if (!p2p.isConnectInFlight()) {
+        try {
+          p2p.disconnect();
+        } catch (_e) {
+          // 忽略断开异常
+        }
       }
     }
 
@@ -961,7 +969,10 @@ export class ConnectChannelManager {
       // 探活/连接失败走回退
     }
     try {
-      P2PService.getInstance().disconnect();
+      // 探活失败期间可能已有新的建连在途，避免抢断
+      if (!P2PService.getInstance().isConnectInFlight()) {
+        P2PService.getInstance().disconnect();
+      }
     } catch (_e) {
       // 忽略断开异常
     }
@@ -992,7 +1003,10 @@ export class ConnectChannelManager {
       // 探活/连接失败走回退
     }
     try {
-      P2PService.getInstance().disconnect();
+      // 探活失败期间可能已有新的建连在途，避免抢断
+      if (!P2PService.getInstance().isConnectInFlight()) {
+        P2PService.getInstance().disconnect();
+      }
     } catch (_e) {
       // 忽略断开异常
     }
@@ -1030,7 +1044,8 @@ export class ConnectChannelManager {
   private static disconnectP2pIfNotInUse(): void {
     // 延迟断开 P2P，给在途请求留时间（对齐 _disconnectP2pIfNotInUse）
     setTimeout((): void => {
-      if (!APIClient.getInstance().isP2pMode) {
+      // 延迟期间可能已发起新的 P2P 建连，不能在此时断开
+      if (!APIClient.getInstance().isP2pMode && !P2PService.getInstance().isConnectInFlight()) {
         P2PService.getInstance().disconnect();
       }
     }, P2P_DISCONNECT_DELAY_MS);

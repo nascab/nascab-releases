@@ -119,6 +119,8 @@ export class P2PService implements P2pRequestSender {
   private connectEpoch: number = 0;
   /** 当前在途建连的配对码（供 isConnectInFlightFor 判定，对齐 Flutter _isP2pConnectInFlightFor） */
   private inFlightCode: string = '';
+  /** 当前在途建连的 ICE 偏好（同码同偏好并发请求直接复用同一建连） */
+  private inFlightPreference: P2pIcePreference = P2pIcePreference.AUTO;
   /** 已建立连接实际使用的 ICE 偏好（短路复用时需匹配） */
   private activeIcePreference: P2pIcePreference = P2pIcePreference.AUTO;
 
@@ -137,14 +139,22 @@ export class P2PService implements P2pRequestSender {
     const resolved = icePreference ?? (this.isRelayPreferredForPairCode(code)
       ? P2pIcePreference.RELAY_ONLY : P2pIcePreference.AUTO);
     this.icePreference = resolved;
+    const trimmed = code.trim();
+    // 同码同偏好建连已在进行中：直接复用同一 Promise，避免排队方重复建连
+    // 并在随后因探活失败 disconnect() 打断在途建连（p2p_connect_stale）
+    if (this.connectSerialPromise !== undefined && this.inFlightCode === trimmed
+      && (resolved === P2pIcePreference.AUTO || this.inFlightPreference === resolved)) {
+      await this.connectSerialPromise;
+      return;
+    }
     while (this.connectSerialPromise) {
       // 排队等待前一次建连结束，但吞掉其错误：
       // 排队方不继承前次失败，由本次按自己的参数重新评估（可短路复用）
       const prev = this.connectSerialPromise;
       await prev.catch(() => {});
     }
-    const trimmed = code.trim();
     this.inFlightCode = trimmed;
+    this.inFlightPreference = resolved;
     this.connectSerialPromise = this.connectByPairCodeBody(trimmed, resolved);
     try {
       await this.connectSerialPromise;
@@ -343,6 +353,11 @@ export class P2PService implements P2pRequestSender {
   isConnectInFlightFor(code: string): boolean {
     const trimmed = code.trim();
     return trimmed.length > 0 && this.connectSerialPromise !== undefined && this.inFlightCode === trimmed;
+  }
+
+  /** 是否有任意 P2P 建连正在进行（后台通道重检需避让，否则 disconnect 会打断在途建连） */
+  isConnectInFlight(): boolean {
+    return this.connectSerialPromise !== undefined;
   }
 
   get storedPairCode(): string {
