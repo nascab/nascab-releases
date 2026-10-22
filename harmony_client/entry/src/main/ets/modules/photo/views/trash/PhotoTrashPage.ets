@@ -487,8 +487,13 @@ export struct PhotoTrashPage {
   TitleActions() {
     if (this.ctrl.isMultiSelectMode) {
       BorderedIconButton({
-        icon: $r('sys.symbol.checkmark_square_fill'),
+        icon: this.isAllSelected()
+          ? $r('sys.symbol.checkmark_circle_fill')
+          : $r('sys.symbol.checkmark_circle'),
         active: this.isAllSelected(),
+        // 标题栏为深色 appBar：图标/描边跟随前景色，避免浅色模式下深色图标贴在深蓝底上
+        strokeColor: AppTheme.withAlpha(AppTheme.current().appBarFg, 0.35),
+        iconColor: AppTheme.current().appBarFg,
         onTap: (): void => {
           this.ctrl.toggleSelectAll();
         }
@@ -569,7 +574,7 @@ export struct PhotoTrashPage {
       })
         .layoutWeight(1)
       BorderedIconButton({
-        icon: $r('sys.symbol.checkmark_square_fill'),
+        icon: $r('sys.symbol.checkmark_circle'),
         onTap: (): void => {
           this.ctrl.toggleMultiSelectMode();
         }
@@ -597,10 +602,12 @@ export struct PhotoTrashPage {
             .aspectRatio(1)
         }
       }, (item: TrashPhotoItem) => `trash_${item.id}`)
-      // 页脚：加载中 / 没有更多 / 加载更多
+      // 页脚：加载中 / 没有更多 / 加载更多（横跨整行，独占一行）
       GridItem() {
         this.Footer()
       }
+      .columnStart(0)
+      .columnEnd(this.ctrl.crossAxisCount - 1)
     }
     .columnsTemplate(this.columnsTemplate())
     .columnsGap(2)
