@@ -7,11 +7,11 @@
         "material": {
           "certpath": "/Users/zcz/.ohos/config/default_harmony_client_wrVh-UoBcx_V0fIJa7A0w3qSryG2NUfJQFFvbk3sr5Y=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B27DCFC5142B41C8F692C342E56D852FDF0BEB38DCC7EB45735471A52BE10B3FB0972306CA82949",
+          "keyPassword": "0000001B8A991450026539CDBC96A84CD229AF2BE696D22BE6974A0143365C62BF2D80AE2CBA23D85D3265",
           "profile": "/Users/zcz/.ohos/config/default_harmony_client_wrVh-UoBcx_V0fIJa7A0w3qSryG2NUfJQFFvbk3sr5Y=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "/Users/zcz/.ohos/config/default_harmony_client_wrVh-UoBcx_V0fIJa7A0w3qSryG2NUfJQFFvbk3sr5Y=.p12",
-          "storePassword": "0000001BDF6EF7B716A7C76DCDEC424EB2C19B7150D65F2D1BB34BEDA6CCD0E8EDDF2961B5FA39E48AB4EC"
+          "storePassword": "0000001B0D34BA7DEAE9196DE64F057CEACAE288D2C35BD26076E1953F97CFB9B4A70EE9F21853E0800AAB"
         }
       }
     ],

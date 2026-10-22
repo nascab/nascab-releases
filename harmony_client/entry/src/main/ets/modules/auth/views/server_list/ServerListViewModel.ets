@@ -986,7 +986,7 @@ export class ServerListViewModel {
       this.pairDialogVisible = false;
       this.goToAddServerView(candidate);
     } catch (e) {
-      this.pairConnectError = ServerListViewModel.errorMessage(e);
+      this.pairConnectError = ServerListViewModel.formatPairConnectError(e);
     } finally {
       this.pairConnecting = false;
     }
@@ -1141,6 +1141,18 @@ export class ServerListViewModel {
       return e.message;
     }
     return `${e}`;
+  }
+
+  /// 配对码建连异常转可读文案（对齐 Flutter ApiController.formatP2pConnectError）：
+  /// 配对码对应服务端不在线时信令返回 HTTP 404/403 或裸状态码，不能直接展示给用户
+  private static formatPairConnectError(e: Object): string {
+    const msg = ServerListViewModel.errorMessage(e).trim();
+    if (/^\d{3}$/.test(msg) || msg.includes('pair_session_http_')
+      || msg.includes('pair_session_invalid') || msg.includes('pair_ws_url_invalid')
+      || msg.includes('p2p_') || msg.includes('P2P_DEVICE_OFFLINE')) {
+      return L10n.serverConnectFail;
+    }
+    return msg.length > 0 ? msg : L10n.serverConnectFail;
   }
 
   private static sleep(ms: number): Promise<void> {

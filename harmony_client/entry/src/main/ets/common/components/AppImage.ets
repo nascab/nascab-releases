@@ -3,8 +3,12 @@ import { image } from '@kit.ImageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import fs from '@ohos.file.fs';
 import { APIClient } from '../../core/network/APIClient';
+import { NetworkConfig } from '../../core/network/NetworkConfig';
 import { AppTheme } from '../../core/theme/AppTheme';
 import { L10n } from '../../core/localization/L10n';
+import { P2PService } from '../../p2p/P2PService';
+import { P2pChannelUtil } from '../../p2p/P2pProtocol';
+import { HeaderMap } from '../HeaderMap';
 
 const THUMB_LOG_DOMAIN: number = 0x8801;
 const THUMB_LOG_TAG: string = 'TinyThumb';
@@ -407,6 +411,15 @@ export class AppImageLoader {
   }
 
   private static async downloadOnce(url: string, req: InflightRequest): Promise<ArrayBuffer> {
+    // P2P 模式下图片 URL 使用 p2p.local，网络栈无法解析该主机名（CURLcode 6），
+    // 需与壁纸/播放一致改走 WebRTC 数据通道直接取字节
+    if (url.startsWith(NetworkConfig.P2P_BASE_URL)) {
+      return AppImageLoader.downloadViaP2p(url, req);
+    }
+    return AppImageLoader.downloadViaHttp(url, req);
+  }
+
+  private static async downloadViaHttp(url: string, req: InflightRequest): Promise<ArrayBuffer> {
     const token = (APIClient.getInstance().state.accessToken ?? '').trim();
     const headers: Record<string, string> = {};
     if (token.length > 0) {
@@ -444,6 +457,52 @@ export class AppImageLoader {
       httpReq.destroy();
       req.httpReq = undefined;
     }
+  }
+
+  /** P2P 图片下载：p2p.local 只是逻辑主机名，实际经 WebRTC 数据通道按路径取字节 */
+  private static async downloadViaP2p(url: string, req: InflightRequest): Promise<ArrayBuffer> {
+    let path = url.substring(NetworkConfig.P2P_BASE_URL.length);
+    if (path.length === 0) {
+      throw new Error('image_p2p_invalid_url');
+    }
+    if (!path.startsWith('/')) {
+      path = `/${path}`;
+    }
+    // 通道已切换为直连（P2P 升级/断开）时，用当前 baseUrl 重新解析旧 URL，避免首屏一直失败
+    const api = APIClient.getInstance();
+    if (!P2PService.getInstance().isConnected) {
+      const base = api.baseUrl.trim().replace(/\/+$/, '');
+      if (!api.isP2pMode && base.length > 0) {
+        return AppImageLoader.downloadViaHttp(`${base}${path}`, req);
+      }
+      throw new Error('image_p2p_not_connected');
+    }
+    const headers = new HeaderMap();
+    const token = (api.state.accessToken ?? '').trim();
+    if (token.length > 0) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    const resp = await P2PService.getInstance().sendOnChannel(
+      P2pChannelUtil.resolvePath(path),
+      'GET',
+      path,
+      headers,
+      new Uint8Array(0),
+      60000
+    );
+    if (resp.status === 202) {
+      throw new Error('image_http_202');
+    }
+    if (resp.status < 200 || resp.status >= 300) {
+      throw new Error(`image_http_${resp.status}`);
+    }
+    if (resp.bodyBytes.length === 0) {
+      throw new Error(AppImageLoader.isTinyUrl(path) ? 'image_http_202' : 'image_failed');
+    }
+    // 复制为独立缓冲区（bodyBytes 可能持有更大的底层 ArrayBuffer）
+    const out = new ArrayBuffer(resp.bodyBytes.length);
+    new Uint8Array(out).set(resp.bodyBytes);
+    return out;
   }
 
   private static diskPath(url: string): string {

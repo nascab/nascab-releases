@@ -349,6 +349,11 @@ export class P2PService implements P2pRequestSender {
       remoteValidation: 'skip',
     });
     req.destroy();
+    // 非 2xx（如服务端未在线时信令返回 404/403）优先按 HTTP 状态码抛出，
+    // 对齐 Flutter pair_session_http_<status>，避免把状态码当作业务错误直接展示给用户
+    if (response.responseCode < 200 || response.responseCode >= 300) {
+      throw P2PError.wsError(`pair_session_http_${response.responseCode}`);
+    }
     const json = JsonCodec.parseStr<ApiEnvelope>(response.result as string);
     if (json.success !== true && json.code !== 0) {
       throw P2PError.wsError(`${json.code ?? 'p2p_session_create_failed'}`);
