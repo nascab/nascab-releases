@@ -577,6 +577,8 @@ export class ServerListViewModel {
     let p2pFailed = false;
     let p2pError: Object | undefined = undefined;
     let p2pWon = false;
+    /** LAN 已命中：此后 P2P 建连不得再重试，否则会在登录成功后把 baseUrl 抢回 P2P */
+    let lanWon = false;
 
     const settle = (): void => {
       if (decided.isSettled) {
@@ -604,6 +606,7 @@ export class ServerListViewModel {
       if (hit !== undefined) {
         lanWinUrl = hit.url;
         lanWinStatus = hit.status;
+        lanWon = true;
       }
       lanDone = true;
       settle();
@@ -614,7 +617,7 @@ export class ServerListViewModel {
 
     // P2P 建连任务（已可复用则无需启动；在途同码经建连队列排队短路）
     if (!p2pReusable) {
-      this.ensureP2pConnected(server).then(() => {
+      this.ensureP2pConnected(server, (): boolean => lanWon).then(() => {
         p2pFailed = !p2p.isConnected;
         p2pDone = true;
         settle();
@@ -754,8 +757,9 @@ export class ServerListViewModel {
     return statusServerId === itemServerId;
   }
 
-  /// 遇到 P2P_DEVICE_OFFLINE 时重试，设备可能处于重连信令服务器的短暂窗口期
-  private async ensureP2pConnected(server: ServerInfo): Promise<void> {
+  /// 遇到 P2P_DEVICE_OFFLINE 时重试，设备可能处于重连信令服务器的短暂窗口期。
+  /// shouldStop 返回 true 时立即终止重试（如 LAN 直连竞速已胜出，P2P 不应再建连）。
+  private async ensureP2pConnected(server: ServerInfo, shouldStop?: () => boolean): Promise<void> {
     const code = (server.pairCode ?? '').trim();
     if (code.length === 0) {
       throw new Error(L10n.serverPairCodeEmpty);
@@ -763,12 +767,20 @@ export class ServerListViewModel {
     const maxRetries = 3;
     const retryDelayMs = 1500;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (shouldStop !== undefined && shouldStop()) {
+        throw new Error('p2p_connect_cancelled');
+      }
       try {
         await P2PService.getInstance().connectByPairCode(code);
         return;
       } catch (e) {
         const msg = ServerListViewModel.errorMessage(e);
         if (this.tapCancelled) {
+          throw new Error(msg);
+        }
+        // LAN 已胜出时断开 P2P 会让在途建连抛 p2p_connect_stale，
+        // 此时不能按「代际失效」重试，否则 P2P 建连成功后会抢走 baseUrl
+        if (shouldStop !== undefined && shouldStop()) {
           throw new Error(msg);
         }
         if (msg.includes('P2P_DEVICE_OFFLINE') && attempt < maxRetries) {

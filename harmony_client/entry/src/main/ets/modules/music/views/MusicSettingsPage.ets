@@ -3,7 +3,6 @@ import { AppTheme } from '../../../core/theme/AppTheme';
 import { PageScaffold } from '../../../common/PageScaffold';
 import { ToastUtil } from '../../../common/ToastUtil';
 import { DialogUtil } from '../../../common/DialogUtil';
-import { EmptyState } from '../../../common/components/EmptyState';
 import { CurrentUserStore } from '../../../core/user/CurrentUserStore';
 import { PickOption, showOptionPickSheet } from '../../../common/components/OptionPickSheet';
 import { MusicSourceController, MusicCacheSettingsController } from '../controllers/MusicSettingControllers';
@@ -218,51 +217,57 @@ export struct MusicSourceSettingsView {
       .width('100%')
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
-      if (this.ctrl.sources.length === 0) {
-        Column() {
-          EmptyState({ message: L10n.t('music_source_add_card', '添加音乐来源目录') })
-        }
-        .layoutWeight(1)
-      } else {
-        List() {
-          ForEach(this.ctrl.sources, (s: MusicSource) => {
-            ListItem() {
-              this.SourceCard(s)
-            }
-            .padding({ left: 16, right: 16, top: 6, bottom: 6 })
-          }, (s: MusicSource) => `${s.id}_${s.path}`)
-        }
-        .layoutWeight(1)
-        .width('100%')
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.Spring)
-      }
+      // 来源列表 + 添加来源卡片（添加卡片跟随列表，对齐照片设置页 NarrowList）
+      List() {
+        ForEach(this.ctrl.sources, (s: MusicSource) => {
+          ListItem() {
+            this.SourceCard(s)
+          }
+          .padding({ left: 16, right: 16, top: 6, bottom: 6 })
+        }, (s: MusicSource) => `${s.id}_${s.path}_${s.exists}_${s.scanWhenStart}_${s.scanWhenChange}_${s.scanInterval}_${s.scanIntervalMs}_${s.showType}`)
 
-      // 添加来源卡片（对齐 _MobileAddSourceCard）
-      Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.plus_circle'))
-          .fontSize(20)
-          .fontColor([AppTheme.current().primary])
-        Text(L10n.t('music_source_add_card', '添加音乐来源目录'))
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(AppTheme.current().onSurface)
-        SymbolGlyph($r('sys.symbol.questionmark_circle'))
-          .fontSize(16)
-          .fontColor([AppTheme.withAlpha(AppTheme.current().onSurface, 0.45)])
-          .onClick(() => {
-            this.showHelp(L10n.t('music_source_help_add_source', '添加一个目录作为音乐来源'));
+        ListItem() {
+          // 添加来源卡片（与照片设置页 _MobileAddSourceCard 样式一致：带 border 的圆角卡片）
+          Row({ space: 8 }) {
+            SymbolGlyph($r('sys.symbol.plus_circle'))
+              .fontSize(20)
+              .fontColor([AppTheme.current().primary])
+            Text(L10n.t('music_source_add_card', '添加音乐来源目录'))
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(AppTheme.current().onSurface)
+            SymbolGlyph($r('sys.symbol.questionmark_circle'))
+              .fontSize(16)
+              .fontColor([AppTheme.withAlpha(AppTheme.current().onSurface, 0.45)])
+              .onClick(() => {
+                this.showHelp(L10n.t('music_source_help_add_source', '添加一个目录作为音乐来源'));
+              })
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .padding({ top: 14, bottom: 14 })
+          .borderRadius(16)
+          .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.55))
+          .border({
+            width: 1,
+            color: AppTheme.withAlpha(AppTheme.current().onSurface, 0.06)
           })
+          .onClick(() => {
+            this.pickAndAdd();
+          })
+        }
+        .padding({ left: 16, right: 16, top: 6, bottom: 16 })
+
+        ListItem() {
+          Column()
+            .width('100%')
+            .height(8)
+        }
       }
+      .layoutWeight(1)
       .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .padding({ top: 14, bottom: 14 })
-      .margin({ left: 16, right: 16, bottom: 16 })
-      .borderRadius(14)
-      .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.9))
-      .onClick(() => {
-        this.pickAndAdd();
-      })
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .height('100%')
@@ -399,9 +404,12 @@ export struct MusicSourceSettingsView {
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .padding(12)
-    .borderRadius(14)
-    .border({ width: 0.8, color: AppTheme.withAlpha(AppTheme.current().divider, 0.8) })
-    .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.9))
+    .borderRadius(16)
+    .border({
+      width: 1,
+      color: AppTheme.withAlpha(AppTheme.current().onSurface, 0.06)
+    })
+    .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.55))
   }
 
   @Builder
@@ -555,9 +563,12 @@ export struct MusicCacheSettingsView {
           .width('100%')
           .alignItems(HorizontalAlign.Start)
           .padding(12)
-          .borderRadius(14)
-          .border({ width: 0.8, color: AppTheme.withAlpha(AppTheme.current().divider, 0.8) })
-          .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.9))
+          .borderRadius(16)
+          .border({
+            width: 1,
+            color: AppTheme.withAlpha(AppTheme.current().onSurface, 0.06)
+          })
+          .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.55))
         }
         .padding({ left: 16, right: 16, top: 6, bottom: 6 })
 
@@ -599,9 +610,12 @@ export struct MusicCacheSettingsView {
           .width('100%')
           .alignItems(HorizontalAlign.Start)
           .padding(12)
-          .borderRadius(14)
-          .border({ width: 0.8, color: AppTheme.withAlpha(AppTheme.current().divider, 0.8) })
-          .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.9))
+          .borderRadius(16)
+          .border({
+            width: 1,
+            color: AppTheme.withAlpha(AppTheme.current().onSurface, 0.06)
+          })
+          .backgroundColor(AppTheme.withAlpha(AppTheme.current().surfaceBg, 0.55))
         }
         .padding({ left: 16, right: 16, top: 6, bottom: 6 })
       }
