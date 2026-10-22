@@ -32,6 +32,12 @@ export struct ServerListPage {
   @Local isRefreshing: boolean = false;
   /** 状态栏高度（vp）：沉浸式布局下顶部内容避让（卡片背景仍顶格延伸） */
   @Local statusBarHeight: number = 0;
+  /** 服务器更多菜单底部弹层是否显示 */
+  @Local menuSheetVisible: boolean = false;
+  /** 当前操作菜单的服务器（弹层头部展示其名称与地址） */
+  @Local menuServer: ServerInfo | undefined = undefined;
+  /** 弹层中选中的动作，待弹层关闭动画结束后执行 */
+  private pendingMenuAction: string = '';
   @Param onNavigateHome: () => void = () => {
   };
   @Param pageStack: NavPathStack = new NavPathStack();
@@ -148,42 +154,140 @@ export struct ServerListPage {
     }
     .width('100%')
     .height('100%')
+    // 服务器更多菜单：底部弹层（替代原悬浮菜单）
+    .bindSheet(this.menuSheetVisible, this.ServerMenuSheet(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: true,
+      showClose: false,
+      backgroundColor: AuthTheme.dialogBg,
+      onDisappear: (): void => {
+        this.onServerMenuSheetDisappear();
+      }
+    })
   }
 
-  /** 服务器 item 更多菜单（对齐 Flutter PopupMenuButton 的菜单项）：
-   *  编辑 / 远程连接偏好(有配对码) / 移动到列表顶部(已保存>1) / 启动时自动登录(或取消) / 删除 */
+  /** 服务器 item 更多菜单底部弹层（替代原悬浮菜单）：
+   *  头部展示当前服务器名称与地址，下接 编辑 / 远程连接偏好(有配对码) /
+   *  移动到列表顶部(已保存>1) / 启动时自动登录(或取消) / 删除 */
   @Builder
-  ServerItemMenu(server: ServerInfo) {
-    Menu() {
-      MenuItem({ content: L10n.edit })
-        .contentFontColor(AuthTheme.textMain)
-        .onClick(() => {
-          this.vm.handleMenuSelection('edit', server);
-        })
-      if (server.hasPairCode()) {
-        MenuItem({ content: L10n.serverRemoteConnectPref })
-          .contentFontColor(AuthTheme.textMain)
-          .onClick(() => {
-            this.vm.handleMenuSelection('remote_pref', server);
-          })
+  ServerMenuSheet() {
+    Column() {
+      if (this.menuServer !== undefined) {
+        // 当前操作的服务器：图标 + 名称 + 地址
+        Row({ space: 12 }) {
+          Image(platformIconResource(this.menuServer!.serverPlatform))
+            .width(40)
+            .height(40)
+            .objectFit(ImageFit.Contain)
+
+          Column() {
+            Text(this.sheetServerTitle(this.menuServer!))
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AuthTheme.textMain)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+            Text(this.sheetServerAddress(this.menuServer!))
+              .fontSize(13)
+              .fontColor(AuthTheme.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+              .margin({ top: 3 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .padding({ left: 20, right: 20, top: 4, bottom: 14 })
+
+        Divider()
+          .strokeWidth(0.6)
+          .color(AuthTheme.dividerFaint)
+          .margin({ left: 20, right: 20 })
+
+        this.ServerMenuSheetItem($r('sys.symbol.square_and_pencil'), L10n.edit, AuthTheme.textMain, 'edit')
+        if (this.menuServer!.hasPairCode()) {
+          this.ServerMenuSheetItem($r('sys.symbol.slider_horizontal_2'), L10n.serverRemoteConnectPref,
+            AuthTheme.textMain, 'remote_pref')
+        }
+        if (this.vm.savedServers.length > 1) {
+          this.ServerMenuSheetItem($r('sys.symbol.arrow_up'), L10n.serverMoveToTop, AuthTheme.textMain, 'move_to_top')
+        }
+        this.ServerMenuSheetItem($r('sys.symbol.bolt'),
+          this.menuServer!.autoLoginOnStartup ? L10n.serverAutoLoginCancel : L10n.serverAutoLogin,
+          AuthTheme.textMain, 'toggle_auto_login')
+        this.ServerMenuSheetItem($r('sys.symbol.trash'), L10n.delete, AuthTheme.errorColor, 'delete')
       }
-      if (this.vm.savedServers.length > 1) {
-        MenuItem({ content: L10n.serverMoveToTop })
-          .contentFontColor(AuthTheme.textMain)
-          .onClick(() => {
-            this.vm.handleMenuSelection('move_to_top', server);
-          })
-      }
-      MenuItem({ content: server.autoLoginOnStartup ? L10n.serverAutoLoginCancel : L10n.serverAutoLogin })
-        .contentFontColor(AuthTheme.textMain)
-        .onClick(() => {
-          this.vm.handleMenuSelection('toggle_auto_login', server);
-        })
-      MenuItem({ content: L10n.delete })
-        .contentFontColor(AuthTheme.errorColor)
-        .onClick(() => {
-          this.vm.handleMenuSelection('delete', server);
-        })
+      Blank().height(28)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .backgroundColor(AuthTheme.dialogBg)
+    .borderRadius({ topLeft: 16, topRight: 16 })
+  }
+
+  /** 底部弹层菜单项（图标 + 标题） */
+  @Builder
+  ServerMenuSheetItem(icon: Resource, title: string, color: Resource, action: string) {
+    Row({ space: 14 }) {
+      SymbolGlyph(icon)
+        .fontSize(22)
+        .fontColor([color])
+      Text(title)
+        .fontSize(15)
+        .fontColor(color)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ left: 20, right: 20, top: 14, bottom: 14 })
+    .onClick(() => this.onServerMenuSelect(action))
+  }
+
+  /** 弹层标题：主机名 + (自定义名称)，与列表项展示保持一致 */
+  private sheetServerTitle(server: ServerInfo): string {
+    const host = server.displayHostName.trim();
+    const name = server.serverName.trim();
+    if (host.length > 0) {
+      return name.length > 0 ? `${host} (${name})` : host;
+    }
+    return name.length > 0 ? name : this.sheetServerAddress(server);
+  }
+
+  /** 弹层地址：P2P 服务器展示 P2P 标识，其余展示服务器地址 */
+  private sheetServerAddress(server: ServerInfo): string {
+    if (server.isP2p || server.serverUrl.trim().length === 0) {
+      return 'P2P';
+    }
+    return server.serverUrl.trim();
+  }
+
+  /** 打开底部弹层，记录当前操作的服务器 */
+  private openServerMenu(server: ServerInfo): void {
+    this.menuServer = server;
+    this.pendingMenuAction = '';
+    this.menuSheetVisible = true;
+  }
+
+  /** 菜单项点击：先收起弹层，动画结束后再执行动作（避免对话框被弹层遮挡） */
+  private onServerMenuSelect(action: string): void {
+    this.pendingMenuAction = action;
+    this.menuSheetVisible = false;
+  }
+
+  /** 弹层关闭（含下滑/点遮罩）后清理状态，并按需执行已选动作 */
+  private onServerMenuSheetDisappear(): void {
+    this.menuSheetVisible = false;
+    const action = this.pendingMenuAction;
+    const server = this.menuServer;
+    this.pendingMenuAction = '';
+    this.menuServer = undefined;
+    if (action.length > 0 && server !== undefined) {
+      this.vm.handleMenuSelection(action, server);
     }
   }
 
@@ -589,7 +693,9 @@ export struct ServerListPage {
         .alignItems(HorizontalAlign.Center)
         .padding({ left: 9, right: 9, top: 11, bottom: 11 })
         .margin({ right: 6 })
-        .bindMenu(this.ServerItemMenu(server))
+        .onClick(() => {
+          this.openServerMenu(server);
+        })
       }
     }
     .width('100%')
