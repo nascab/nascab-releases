@@ -96,15 +96,21 @@ export struct PhotoTimelineItem {
       .padding({ left: 6, right: 6, top: 6 })
       .alignItems(VerticalAlign.Center)
 
-      // 底部左侧收藏
+      // 底部左侧收藏：点击红心直接取消收藏（32x32 热区，避免小图标点不中反而打开预览）
       if (this.item.isFavorite && !this.ctrl.isMultiSelectMode) {
-        SymbolGlyph(this.item.isFavorite ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
-          .fontSize(20)
-          .fontColor([this.item.isFavorite ? '#FF3B30' : '#FFFFFF'])
-          .position({ x: 2, y: this.cellExtent() - 30 })
-          .onClick(() => {
-            void this.ctrl.toggleFavorite(this.item);
-          })
+        Column() {
+          SymbolGlyph($r('sys.symbol.heart_fill'))
+            .fontSize(20)
+            .fontColor(['#FF3B30'])
+        }
+        .width(32)
+        .height(32)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .position({ x: 0, y: this.cellExtent() - 32 })
+        .onClick(() => {
+          void this.ctrl.toggleFavorite(this.item);
+        })
       }
 
       // 底部右侧多选勾选

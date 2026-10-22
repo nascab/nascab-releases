@@ -74,29 +74,6 @@ class FetchRange {
   endIndex: number = 0;
 }
 
-function mapPhoto(p: TimelinePhotoItem, isFavorite: boolean): TimelinePhotoItem {
-  const np = new TimelinePhotoItem();
-  np.id = p.id;
-  np.path = p.path;
-  np.filename = p.filename;
-  np.size = p.size;
-  np.isLvp = p.isLvp;
-  np.isMergeLvp = p.isMergeLvp;
-  np.type = p.type;
-  np.width = p.width;
-  np.height = p.height;
-  np.originalDate = p.originalDate;
-  np.originalTime = p.originalTime;
-  np.fullpath = p.fullpath;
-  np.duration = p.duration;
-  np.fileHash = p.fileHash;
-  np.liveFilename = p.liveFilename;
-  np.rawFilename = p.rawFilename;
-  np.rawShowExt = p.rawShowExt;
-  np.isFavorite = isFavorite;
-  return np;
-}
-
 /**
  * 照片时间轴控制器（对齐 Flutter PhotoTimelineController 及其 parts：
  * loading/pagination/settings/utils/scroll/selection/media；移动端交互）
@@ -1040,8 +1017,7 @@ export class TimelineController {
         if (isFavoriteList) {
           this.removeIdsAndCleanUp(ids);
         } else {
-          this.updatePhotosInRows(ids, (p: TimelinePhotoItem): TimelinePhotoItem =>
-            mapPhoto(p, targetState));
+          this.setFavoriteStatus(ids, targetState);
         }
       }
       this.exitMultiSelectMode();
@@ -1050,25 +1026,33 @@ export class TimelineController {
     }
   }
 
-  /** 单个收藏切换（乐观更新，对齐 toggleFavorite） */
+  /** 单个收藏切换（乐观更新，对齐 Flutter toggleFavorite） */
   async toggleFavorite(item: TimelinePhotoItem): Promise<void> {
+    const newStatus = !item.isFavorite;
+    // 收藏列表中取消收藏：立即从列表移除并清理空日期头（对齐 Flutter _updateItemFavoriteStatus）
+    const removedFromList = this.listType === LIST_FAVORITE && !newStatus;
+    if (removedFromList) {
+      this.removeIdsAndCleanUp(new Set<number>([item.id]));
+    } else {
+      // 原地修改 @Trace 字段，网格立即刷新收藏状态（替换对象会被 ForEach 同 key 复用而丢更新）
+      item.isFavorite = newStatus;
+    }
     try {
-      const newStatus = !item.isFavorite;
-      this.updateSinglePhoto(item.id, (p: TimelinePhotoItem): TimelinePhotoItem =>
-        mapPhoto(p, newStatus));
       const res = await this.apiService.toggleFavorite(item.fileHash);
       if (res.success && res.data !== undefined) {
-        if (res.data !== newStatus) {
-          const finalStatus = res.data;
-          this.updateSinglePhoto(item.id, (p: TimelinePhotoItem): TimelinePhotoItem =>
-            mapPhoto(p, finalStatus));
+        if (!removedFromList && res.data !== newStatus) {
+          item.isFavorite = res.data;
         }
+      } else if (removedFromList) {
+        // 已从收藏列表移除但请求失败：重新拉取恢复数据
+        await this.refreshTimeline();
       } else {
-        this.updateSinglePhoto(item.id, (p: TimelinePhotoItem): TimelinePhotoItem =>
-          mapPhoto(p, !newStatus));
+        item.isFavorite = !newStatus;
       }
     } catch (_e) {
-      // 忽略
+      if (removedFromList) {
+        void this.refreshTimeline();
+      }
     }
   }
 
@@ -1094,28 +1078,19 @@ export class TimelineController {
     }
   }
 
-  private updateSinglePhoto(id: number, mapper: (p: TimelinePhotoItem) => TimelinePhotoItem): void {
-    this.updatePhotosInRows(new Set<number>([id]), mapper);
-  }
-
-  private updatePhotosInRows(ids: Set<number>, mapper: (p: TimelinePhotoItem) => TimelinePhotoItem):
-    void {
+  /**
+   * 原地更新收藏状态：isFavorite 为 @Trace 字段，修改后网格立即刷新；
+   * 不能替换为新的 TimelinePhotoItem 对象（ForEach 按 id 复用组件，同 key 不会更新子组件参数）。
+   */
+  private setFavoriteStatus(ids: Set<number>, isFavorite: boolean): void {
     for (const row of this.rows) {
       if (row.isHeader) {
         continue;
       }
-      let changed = false;
-      const next: TimelinePhotoItem[] = [];
       for (const p of row.photos) {
         if (ids.has(p.id)) {
-          next.push(mapper(p));
-          changed = true;
-        } else {
-          next.push(p);
+          p.isFavorite = isFavorite;
         }
-      }
-      if (changed) {
-        row.photos = next;
       }
     }
   }

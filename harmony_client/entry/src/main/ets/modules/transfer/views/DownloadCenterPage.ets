@@ -94,7 +94,9 @@ export struct DownloadCenterPage {
   HeaderActions() {
     BorderedIconButton({
       icon: $r('sys.symbol.trash_circle'),
-      iconColor: this.palette().onSurface,
+      // 顶栏为深色 appBar 底色，边框与图标统一使用浅色前景
+      strokeColor: AppTheme.withAlpha(this.palette().appBarFg, 0.35),
+      iconColor: this.palette().appBarFg,
       isEnabled: !this.centerCtrl.isRefreshingFiles,
       onTap: (): void => {
         void this.centerCtrl.promptClearAllHistory();
@@ -102,7 +104,8 @@ export struct DownloadCenterPage {
     })
     BorderedIconButton({
       icon: $r('sys.symbol.arrow_clockwise'),
-      iconColor: this.palette().onSurface,
+      strokeColor: AppTheme.withAlpha(this.palette().appBarFg, 0.35),
+      iconColor: this.palette().appBarFg,
       isEnabled: !this.centerCtrl.isRefreshingFiles,
       onTap: (): void => {
         void this.centerCtrl.loadFirstPage();
