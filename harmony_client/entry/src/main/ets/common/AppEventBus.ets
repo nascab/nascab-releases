@@ -4,6 +4,9 @@ type GenericListener = (data: string) => void;
 /** 相册/智能相册/合集数据变化事件：列表页返回后通知相册主页刷新概览（对齐 Flutter push 返回后的 refreshOverview） */
 export const EVENT_PHOTO_ALBUM_OVERVIEW_CHANGED: string = 'photo_album_overview_changed';
 
+/** 连接通道变化事件（直连地址/P2P 切换）：驱动首页通道文案等 UI 刷新 */
+export const EVENT_CONNECT_CHANNEL_CHANGED: string = 'connect_channel_changed';
+
 export class AppEventBus {
   private static authSessionExpiredListeners: AuthSessionExpiredListener[] = [];
   private static genericListeners: Map<string, GenericListener[]> = new Map();

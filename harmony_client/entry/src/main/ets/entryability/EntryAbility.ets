@@ -3,6 +3,7 @@ import type { Configuration } from '@ohos.app.ability.Configuration';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { AppBootstrap } from '../AppBootstrap';
+import { ConnectChannelManager } from '../core/network/ConnectChannelManager';
 import { ThemeManager } from '../core/theme/ThemeManager';
 import { WindowStore } from '../common/WindowStore';
 
@@ -16,6 +17,11 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'NasCab', 'Failed to set colorMode: %{public}s', JSON.stringify(err));
     }
+  }
+
+  /** 回到前台时补检通道，覆盖后台期间可能错过的 WiFi/移动网络切换事件 */
+  onForeground(): void {
+    ConnectChannelManager.onAppForeground();
   }
 
   async onWindowStageCreate(windowStage: window.WindowStage): Promise<void> {

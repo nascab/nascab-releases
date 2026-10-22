@@ -6,7 +6,7 @@ import { NetworkConfig } from './NetworkConfig';
 import { L10n } from '../localization/L10n';
 import { PreferencesStore } from '../storage/PreferencesStore';
 import { CacheKeys } from '../storage/CacheKeys';
-import { AppEventBus } from '../../common/AppEventBus';
+import { AppEventBus, EVENT_CONNECT_CHANNEL_CHANGED } from '../../common/AppEventBus';
 import { ApiEnvelope, JsonCodec, LoginDataJson } from '../../common/JsonTypes';
 import { HeaderMap } from '../../common/HeaderMap';
 import { HttpHeaders, RefreshTokenBody } from '../../common/HttpTypes';
@@ -19,6 +19,12 @@ export class APIClient {
   private refreshInFlight: Promise<boolean> | undefined = undefined;
   private refreshTimerId: number = -1;
   private p2pSender: P2pRequestSender | undefined = undefined;
+  /** 请求最终失败时的通道重检回调（由 ConnectChannelManager 安装，避免模块循环依赖） */
+  private channelFailoverHandler: ChannelFailoverHandler | undefined = undefined;
+  /** 认证建立回调（登录/刷新 token 成功），用于启动全局网络变化监控 */
+  private authEstablishedHandler: (() => void) | undefined = undefined;
+  /** 认证清除回调（登出/会话过期），用于停止全局网络变化监控 */
+  private authClearedHandler: (() => void) | undefined = undefined;
 
   static getInstance(): APIClient {
     if (!APIClient.instance) {
@@ -29,6 +35,18 @@ export class APIClient {
 
   setP2pSender(sender: P2pRequestSender): void {
     this.p2pSender = sender;
+  }
+
+  setChannelFailoverHandler(handler: ChannelFailoverHandler): void {
+    this.channelFailoverHandler = handler;
+  }
+
+  setAuthEstablishedHandler(handler: () => void): void {
+    this.authEstablishedHandler = handler;
+  }
+
+  setAuthClearedHandler(handler: () => void): void {
+    this.authClearedHandler = handler;
   }
 
   get baseUrl(): string {
@@ -48,8 +66,13 @@ export class APIClient {
   }
 
   setBaseUrl(url: string): void {
+    const changed = this.state.baseUrl.trim() !== url.trim();
     this.state.baseUrl = url;
     void PreferencesStore.getInstance().setString(CacheKeys.AUTH_BASE_URL, url);
+    if (changed) {
+      // 通知首页等 UI 刷新连接通道文案（对齐 Flutter _bumpConnectChannelRevision）
+      AppEventBus.emit(EVENT_CONNECT_CHANNEL_CHANGED);
+    }
   }
 
   setAuthInfo(
@@ -72,6 +95,9 @@ export class APIClient {
     }
     this.saveTokensToStorage();
     this.startTokenRefreshTimer();
+    if (this.authEstablishedHandler) {
+      this.authEstablishedHandler();
+    }
   }
 
   clearAuthInfo(): void {
@@ -82,6 +108,9 @@ export class APIClient {
     this.state.serverVersion = undefined;
     this.clearStoredTokens();
     this.stopTokenRefreshTimer();
+    if (this.authClearedHandler) {
+      this.authClearedHandler();
+    }
   }
 
   loadStoredTokens(): void {
@@ -177,6 +206,23 @@ export class APIClient {
         lastError = `${L10n.networkFailure}: ${e}`;
         if (attempt < maxAttempts - 1) {
           await APIClient.sleep(NetworkConfig.DEFAULT_RETRY_DELAY_MS);
+        }
+      }
+    }
+    // 连续失败：重检通道（对齐 Flutter failover），切换成功后补试一次原请求
+    if (this.channelFailoverHandler) {
+      let switched = false;
+      try {
+        switched = await this.channelFailoverHandler(endpoint, lastError);
+      } catch (_e) {
+        switched = false;
+      }
+      if (switched) {
+        try {
+          const response = await this.sendRequest(method, endpoint, body, queryParams, timeoutMs);
+          return this.handleResponse<T>(response, dataParser);
+        } catch (e) {
+          lastError = `${L10n.networkFailure}: ${e}`;
         }
       }
     }
@@ -486,3 +532,6 @@ export interface P2pRequestSender {
     timeoutMs?: number
   ): Promise<HttpResult>;
 }
+
+/** 请求失败触发的通道重检：返回 true 表示已切换通道 */
+export type ChannelFailoverHandler = (endpoint: string, errorText: string) => Promise<boolean>;

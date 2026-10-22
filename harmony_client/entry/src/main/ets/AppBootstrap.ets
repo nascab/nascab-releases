@@ -1,6 +1,7 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { PreferencesStore } from './core/storage/PreferencesStore';
 import { APIClient } from './core/network/APIClient';
+import { ConnectChannelManager } from './core/network/ConnectChannelManager';
 import { CurrentUserStore } from './core/user/CurrentUserStore';
 import { P2PService } from './p2p/P2PService';
 import { L10n } from './core/localization/L10n';
@@ -14,6 +15,7 @@ export class AppBootstrap {
     await LanguageService.getInstance().init();
     ThemeManager.getInstance().init(context.getApplicationContext(), systemColorMode);
     APIClient.getInstance().loadStoredTokens();
+    ConnectChannelManager.install();
     CurrentUserStore.getInstance().loadFromCache();
     P2PService.getInstance();
   }

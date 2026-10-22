@@ -1,5 +1,7 @@
 import { L10n } from '../../../core/localization/L10n';
 import { APIClient } from '../../../core/network/APIClient';
+import { ConnectChannelManager } from '../../../core/network/ConnectChannelManager';
+import { AppEventBus, EVENT_CONNECT_CHANNEL_CHANGED } from '../../../common/AppEventBus';
 import { CurrentUserStore } from '../../../core/user/CurrentUserStore';
 import { ServerInfo } from '../../auth/models/ServerInfo';
 import { HomeViewModel } from '../HomeViewModel';
@@ -17,8 +19,21 @@ export struct HomeServerInfoCard {
   };
   @Param onOpenWallpaper: () => void = () => {
   };
-  /** 连接通道刷新计数（对应 Flutter connectChannelRevision） */
-  @Local channelRevision: number = 0;
+  /** 连接通道显示文案（对齐 Flutter connectChannelDisplayValue + connectChannelRevision） */
+  @Local channelText: string = '';
+
+  aboutToAppear(): void {
+    this.channelText = this.computeChannelDisplayValue();
+    AppEventBus.on(EVENT_CONNECT_CHANNEL_CHANGED, this.onChannelChanged);
+  }
+
+  aboutToDisappear(): void {
+    AppEventBus.off(EVENT_CONNECT_CHANNEL_CHANGED, this.onChannelChanged);
+  }
+
+  private onChannelChanged = (_data: string): void => {
+    this.channelText = this.computeChannelDisplayValue();
+  };
 
   private currentServer(): ServerInfo | undefined {
     return this.vm.currentServer;
@@ -42,7 +57,7 @@ export struct HomeServerInfoCard {
   }
 
   /** 连接通道显示值：对应 Flutter ApiController.connectChannelDisplayValue */
-  private channelDisplayValue(): string {
+  private computeChannelDisplayValue(): string {
     const api = APIClient.getInstance();
     if (api.isP2pMode) {
       const p2p = P2PService.getInstance();
@@ -53,6 +68,16 @@ export struct HomeServerInfoCard {
       return 'P2P';
     }
     return api.baseUrl;
+  }
+
+  /** 点击刷新图标：重新探测最优通道（对齐 Flutter api.refreshConnectChannel） */
+  private refreshChannel(): void {
+    this.channelText = this.computeChannelDisplayValue();
+    ConnectChannelManager.refreshConnectChannel().then((): void => {
+      this.channelText = this.computeChannelDisplayValue();
+    }).catch((_e: Object): void => {
+      // 刷新失败保持当前文案
+    });
   }
 
   private messageText(): string {
@@ -89,9 +114,9 @@ export struct HomeServerInfoCard {
                 .fontSize(14)
                 .fontColor([Color.White])
                 .onClick(() => {
-                  this.channelRevision++;
+                  this.refreshChannel();
                 })
-              Text(this.channelDisplayValue())
+              Text(this.channelText)
                 .fontSize(12)
                 .fontColor(Color.White)
                 .margin({ left: 6 })
