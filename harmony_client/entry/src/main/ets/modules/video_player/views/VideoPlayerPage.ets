@@ -1,5 +1,5 @@
 import { window } from '@kit.ArkUI';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { PlayerSurface } from '@mpv-ohos/mpv-arkts';
 import { L10n } from '../../../core/localization/L10n';
 import { SystemBars } from '../../../common/SystemBars';
 import { WindowStore } from '../../../common/WindowStore';
@@ -11,7 +11,6 @@ import {
   showSpeedSheet, showSubtitleSheet
 } from './PlayerMenus';
 
-const TAG = 'VideoPlayerPage';
 /** 播放器主色（对齐 Flutter Colors.blueAccent） */
 const PLAYER_ACCENT = '#448AFF';
 const PLAYER_WHITE = '#FFFFFF';
@@ -79,7 +78,7 @@ struct PlayerBarTextButton {
 
 /**
  * 视频播放器页（对齐 Flutter AppVideoPlayerPage 移动端版式）：
- * 全屏黑底 XComponent + 手势层（点击/长按加速/横向滑动 scrub）+
+ * 全屏黑底 mpv PlayerSurface + 手势层（点击/长按加速/横向滑动 scrub）+
  * 顶栏（返回/标题/信息）+ 中央播放锁定按钮 + 底栏（进度/控制按钮）+
  * 字幕叠层 / scrub 预览 / 加速提示。
  */
@@ -98,7 +97,6 @@ export struct VideoPlayerPage {
   @Local scrubPreviewMs: number = -1;
   @Local scrubCancelZone: boolean = false;
   private scrubOriginMs: number = 0;
-  private xcController: XComponentController = new XComponentController();
   private playlistOpened: boolean = false;
 
   aboutToAppear(): void {
@@ -106,6 +104,8 @@ export struct VideoPlayerPage {
     this.fetchSafeArea();
     // 播放期间保持屏幕常亮（对齐 Flutter WakelockPlus.enable）
     this.keepScreenOn(true);
+    // mpv 允许在 surface 就绪前加载媒体，surface 由 PlayerSurface 内部自动绑定
+    this.openPlaylist();
   }
 
   aboutToDisappear(): void {
@@ -548,13 +548,12 @@ export struct VideoPlayerPage {
   build() {
     NavDestination() {
       Stack({ alignContent: Alignment.Center }) {
-        // 视频渲染层（按视频宽高比 letterbox 居中，黑边由外层背景提供）
-        XComponent({ id: 'nascab_player_surface', type: 'surface', controller: this.xcController })
-          .width(this.fitVideoWidth())
-          .height(this.fitVideoHeight())
-          .onLoad((): void => {
-            this.onSurfaceReady();
-          })
+        // 视频渲染层（mpv PlayerSurface 渲染，按视频宽高比 letterbox 居中，黑边由外层背景提供）
+        Column() {
+          PlayerSurface({ player: this.ctrl.getMpvPlayer() })
+        }
+        .width(this.fitVideoWidth())
+        .height(this.fitVideoHeight())
 
         // 字幕叠层
         this.SubtitleOverlay()
@@ -710,21 +709,15 @@ export struct VideoPlayerPage {
     })
   }
 
-  private onSurfaceReady(): void {
-    try {
-      if (this.playlistOpened) {
-        return;
-      }
-      const sid: string = this.xcController.getXComponentSurfaceId();
-      this.playlistOpened = true;
-      this.ctrl.attachSurface(sid);
-      this.ctrl.ignoreFindSub = this.param.ignoreFindSub === 0 ? 0 : 1;
-      const items: PlayerPlaylistItem[] = this.param.playlist;
-      if (items.length > 0) {
-        void this.ctrl.openPlaylist(items, this.param.initialIndex);
-      }
-    } catch (e) {
-      hilog.error(0x0000, TAG, 'getSurfaceId failed: %{public}s', JSON.stringify(e));
+  private openPlaylist(): void {
+    if (this.playlistOpened) {
+      return;
+    }
+    this.playlistOpened = true;
+    this.ctrl.ignoreFindSub = this.param.ignoreFindSub === 0 ? 0 : 1;
+    const items: PlayerPlaylistItem[] = this.param.playlist;
+    if (items.length > 0) {
+      void this.ctrl.openPlaylist(items, this.param.initialIndex);
     }
   }
 }

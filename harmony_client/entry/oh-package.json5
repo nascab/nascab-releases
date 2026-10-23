@@ -6,7 +6,9 @@
   "author": "",
   "license": "",
   "dependencies": {
-    "@ohos/webrtc": "^1.0.2"
-  }
+    "@ohos/webrtc": "^1.0.2",
+    "@mpv-ohos/mpv-arkts": "^1.0.0"
+  },
+  "devDependencies": {},
+  "dynamicDependencies": {}
 }
-

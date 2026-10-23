@@ -6,6 +6,7 @@
  */
 
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { util } from '@kit.ArkTS';
 import { L10n } from '../../core/localization/L10n';
 import { APIClient } from '../../core/network/APIClient';
 import { PreferencesStore } from '../../core/storage/PreferencesStore';
@@ -22,6 +23,7 @@ import { parseWebVtt, findActiveCue } from './subtitle/WebVttParser';
 import { asNum, asStr } from '../video/models/VideoModels';
 import { WindowStore } from '../../common/WindowStore';
 import { window } from '@kit.ArkUI';
+import { Player } from '@mpv-ohos/mpv-arkts';
 
 const TAG = 'PlayerCtrl';
 /** P2P 中继下默认转码的大文件阈值（字节，对齐 Flutter 3GB） */
@@ -33,9 +35,13 @@ const TRANSCODE_SEEK_DEBOUNCE_MS = 300;
 /** 播放失败重试上限 */
 const MAX_RELOAD_RETRIES = 2;
 
+/**
+ * 服务端 TranscodeWorker 用 UUID 校验 playId
+ * （^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$），
+ * 必须是标准 UUID，否则转码进程直接退出。
+ */
 function generatePlayId(): string {
-  const rnd = Math.floor(Math.random() * 0xFFFF).toString(16).padStart(4, '0');
-  return `${Date.now().toString(16)}-${rnd}-4${rnd}-a${rnd}-${Date.now().toString(16).slice(-8)}`;
+  return util.generateRandomUUID(true);
 }
 
 /** 画质解析：'4k_20m' → { width: 3840, bitrate: '20000k' } */
@@ -116,7 +122,6 @@ export class VideoPlayerController {
   // ===== 内部状态 =====
   private engine: VideoPlayerEngine = new VideoPlayerEngine();
   private apiService = new VideoPlayerApiService();
-  private surfaceId: string = '';
   private playId: string | undefined = undefined;
   private transcodeBaseSeconds: number = 0;
   private pendingTranscodeSeekMs: number = -1;
@@ -154,7 +159,11 @@ export class VideoPlayerController {
         if (this.sourceDurationSec > 0) {
           this.durationMs = this.sourceDurationSec * 1000;
         } else if (durationMs > 0) {
-          this.durationMs = durationMs;
+          // 转码流从 seek 起点截断，mpv 上报的是剩余时长；叠加起始偏移换算为绝对时长，
+          // 否则绝对进度会立刻超过时长，误触发“播放完成”导致停播重建。
+          this.durationMs = this.currentQuality !== 'original' && this.transcodeBaseSeconds > 0
+            ? this.transcodeBaseSeconds * 1000 + durationMs
+            : durationMs;
         }
         void this.engine.loadTracks();
       },
@@ -180,8 +189,10 @@ export class VideoPlayerController {
         this.bufferedMs = this.transcodeTimelinePosition(bufferedMs);
       },
       onVideoSize: (width: number, height: number): void => {
-        this.videoWidth = width;
-        this.videoHeight = height;
+        if (width > 0 && height > 0) {
+          this.videoWidth = width;
+          this.videoHeight = height;
+        }
       }
     });
   }
@@ -257,6 +268,8 @@ export class VideoPlayerController {
     this.clearTranscodeSeekTimer();
     this.isPreparing = true;
     this.isPlaying = false;
+    hilog.info(0x0000, TAG, 'initializePlayer quality=%{public}s keepPosition=%{public}s switchMs=%{public}d',
+      this.currentQuality, String(keepPosition), switchPositionMs);
     const lastPositionMs = switchPositionMs >= 0 ? switchPositionMs : this.positionMs;
     const originalSeekAfterInitMs =
       this.currentQuality === 'original' && keepPosition ? lastPositionMs : -1;
@@ -272,8 +285,9 @@ export class VideoPlayerController {
     if (prevPlayId !== undefined && prevPlayId.length > 0) {
       void this.apiService.stopTranscode(prevPlayId);
     }
-    // 停掉旧引擎播放（保留实例复用）
-    this.engine.stop();
+    // 停掉旧引擎播放（保留实例复用）。必须 await：否则 stop 内部的 reset 会在 open 之后执行，
+    // 把刚写入的新地址复位掉，导致切换画质后卡住不播。
+    await this.engine.stop();
     this.isInitialized = false;
 
     const item = this.currentPlaylistItem();
@@ -285,10 +299,12 @@ export class VideoPlayerController {
     let path = item.path;
     let isUrl = this.isHttpUrl(path);
     this.isUrlSource = isUrl;
-    this.videoWidth = 0;
-    this.videoHeight = 0;
 
     if (!keepPosition) {
+      // 仅在切换片源时清空画面尺寸；会话重建（切音轨/字幕/画质）必须保留，
+      // 否则页面 letterbox 会退化为整页尺寸，画面被拉伸铺满屏幕。
+      this.videoWidth = 0;
+      this.videoHeight = 0;
       this.reloadRetryCount = 0;
       this.isRecoveringFromError = false;
       this.isPlaybackErrorDialogOpen = false;
@@ -330,6 +346,7 @@ export class VideoPlayerController {
     const videoUrl = this.currentQuality === 'original'
       ? this.buildOriginalVideoUrl(item, lastPositionMs)
       : this.buildTranscodeVideoUrl(item, keepPosition, lastPositionMs);
+    hilog.info(0x0000, TAG, 'open url=%{public}s', maskUrl(videoUrl));
 
     if (this.sourceDurationSec > 0) {
       this.durationMs = this.sourceDurationSec * 1000;
@@ -391,8 +408,9 @@ export class VideoPlayerController {
       this.engine.open(videoUrl, targetMs, true);
       this.positionMs = targetMs;
     } else {
-      this.engine.open(videoUrl, keepPosition && this.currentQuality !== 'original'
-        ? lastPositionMs : -1, true);
+      // 转码地址已通过 URL 的 seek 参数完成定位，不能再按绝对进度 seek（对齐 Flutter：
+      // 转码 keepPosition 时 startPosition 恒为 0）；否则会对已截断的转码流越界 seek 导致卡住。
+      this.engine.open(videoUrl, -1, true);
     }
 
     this.finishInit(gen, shouldShowResumeTip);
@@ -524,6 +542,8 @@ export class VideoPlayerController {
     if (token.length > 0) {
       url += `&accessToken=${encodeURIComponent(token)}`;
     }
+    // 不追加 `#.m3u8` 伪后缀：mpv/ffmpeg 会按 m3u8 内容自动识别 HLS，
+    // 而 URL fragment 可能被 mpv 当作本地片段语法解析，导致转码流打开失败。
     return url;
   }
 
@@ -631,7 +651,7 @@ export class VideoPlayerController {
     this.currentAudioTrack = trackLabel;
     this.savePreference();
     if (this.currentQuality === 'original') {
-      // 原画：AVPlayer selectTrack
+      // 原画：mpv 通过 aid 切换音轨
       const track = this.findTrackByLabel(this.audioTracks, trackLabel);
       if (track === undefined) {
         return;
@@ -717,7 +737,7 @@ export class VideoPlayerController {
     if (this.currentQuality !== 'original') {
       return true;
     }
-    // 原画：AVPlayer 不渲染内嵌字幕，文本内嵌也走 VTT；位图需烧录
+    // 原画：内嵌字幕同样走客户端 VTT 叠层；位图需烧录
     return true;
   }
 
@@ -727,6 +747,9 @@ export class VideoPlayerController {
     }
     const prevNeedsBurn = this.subtitleNeedsBurn(this.currentSubtitleTrack);
     const nextNeedsBurn = this.subtitleNeedsBurn(trackLabel);
+    hilog.info(0x0000, TAG,
+      'setSubtitleTrack label=%{public}s prevBurn=%{public}s nextBurn=%{public}s quality=%{public}s',
+      trackLabel, String(prevNeedsBurn), String(nextNeedsBurn), this.currentQuality);
     this.currentSubtitleTrack = trackLabel;
     this.savePreference();
 
@@ -1083,8 +1106,9 @@ export class VideoPlayerController {
     }
     this.webUpdateActiveCue();
     this.handleAutoSkip();
-    // 单曲循环/列表播放完成检测
-    if (this.durationMs > 0 && this.positionMs >= this.durationMs - 1000 && !this.isPlaying) {
+    // 单曲循环/列表播放完成检测（需已真正出画，避免起播/重建阶段的误判）
+    if (!this.isPlaying && enginePosMs > 0 && this.durationMs > 0 &&
+      this.positionMs >= this.durationMs - 1000) {
       if (this.singleLoopCooldown) {
         return;
       }
@@ -1437,9 +1461,9 @@ export class VideoPlayerController {
 
   // ================================ 引擎挂载 / 关闭 ================================
 
-  attachSurface(surfaceId: string): void {
-    this.surfaceId = surfaceId;
-    this.engine.setSurface(surfaceId);
+  /** mpv 播放器实例（页面 PlayerSurface 绑定渲染 surface 用） */
+  getMpvPlayer(): Player {
+    return this.engine.getPlayer();
   }
 
   /** 横向滑动进度预览（页面手势层用） */
@@ -1488,6 +1512,11 @@ export class VideoPlayerController {
 function fileExt(p: string): string {
   const dot = p.lastIndexOf('.');
   return dot >= 0 ? p.substring(dot) : '';
+}
+
+/** 日志脱敏：隐藏访问令牌 */
+function maskUrl(url: string): string {
+  return url.replace(/((?:accessToken|token)=)[^&]*/g, '$1***');
 }
 
 function baseName(p: string): string {
