@@ -26,6 +26,58 @@ function formatMs(ms: number): string {
 }
 
 /**
+ * 底栏图标按钮。
+ * 注意：不能用带参数的 @Builder 实现——@Builder 按值传参时状态变化不会触发其内部 UI 刷新，
+ * 会导致播放/暂停图标一直停留在初始状态；改用 @ComponentV2 + @Param 才能随状态更新。
+ */
+@ComponentV2
+struct PlayerBarIconButton {
+  @Param icon: Resource = $r('sys.symbol.play_fill');
+  /** 注意：不能用 size 命名，会与 CustomComponent 内置 size 属性冲突 */
+  @Param iconSize: number = 22;
+  @Param onTap: () => void = (): void => {
+  };
+
+  build() {
+    Column() {
+      SymbolGlyph(this.icon)
+        .fontSize(this.iconSize)
+        .fontColor([PLAYER_WHITE])
+    }
+    .justifyContent(FlexAlign.Center)
+    .width(44)
+    .height(44)
+    .onClick(() => {
+      this.onTap();
+    })
+  }
+}
+
+/** 底栏文本按钮（倍速/画质），同样用 @ComponentV2 + @Param 保证文案随状态刷新 */
+@ComponentV2
+struct PlayerBarTextButton {
+  @Param label: string = '';
+  @Param onTap: () => void = (): void => {
+  };
+
+  build() {
+    Column() {
+      Text(this.label)
+        .fontSize(15)
+        .fontColor(PLAYER_WHITE)
+        .maxLines(1)
+    }
+    .justifyContent(FlexAlign.Center)
+    .constraintSize({ minWidth: 44 })
+    .height(44)
+    .padding({ left: 8, right: 8 })
+    .onClick(() => {
+      this.onTap();
+    })
+  }
+}
+
+/**
  * 视频播放器页（对齐 Flutter AppVideoPlayerPage 移动端版式）：
  * 全屏黑底 XComponent + 手势层（点击/长按加速/横向滑动 scrub）+
  * 顶栏（返回/标题/信息）+ 中央播放锁定按钮 + 底栏（进度/控制按钮）+
@@ -36,7 +88,7 @@ export struct VideoPlayerPage {
   @Param param: VideoPlayerPageParam = new VideoPlayerPageParam();
   @Param popPage: () => void = (): void => {
   };
-  @Local ctrl: VideoPlayerController = new VideoPlayerController();
+  @Param ctrl: VideoPlayerController = new VideoPlayerController();
   /** 页面尺寸（vp），scrub 比例与字幕字号用 */
   @Local pageWidth: number = 0;
   @Local pageHeight: number = 0;
@@ -52,11 +104,27 @@ export struct VideoPlayerPage {
   aboutToAppear(): void {
     SystemBars.activate(this, { colors: SystemBars.immersiveColors(), fullscreen: true });
     this.fetchSafeArea();
+    // 播放期间保持屏幕常亮（对齐 Flutter WakelockPlus.enable）
+    this.keepScreenOn(true);
   }
 
   aboutToDisappear(): void {
     SystemBars.deactivate(this);
+    // 退出播放器时恢复屏幕休眠（对齐 Flutter WakelockPlus.disable）
+    this.keepScreenOn(false);
     void this.ctrl.close();
+  }
+
+  /** 对齐 Flutter WakelockPlus：视频播放期间保持屏幕常亮 */
+  private keepScreenOn(enable: boolean): void {
+    try {
+      const w = WindowStore.getMainWindow();
+      if (w !== undefined) {
+        w.setWindowKeepScreenOn(enable);
+      }
+    } catch (_e) {
+      // 忽略窗口获取失败
+    }
   }
 
   // ================================ 窗口 ================================
@@ -268,43 +336,79 @@ export struct VideoPlayerPage {
       .width('100%')
       Scroll() {
         Row({ space: 4 }) {
-          this.BarIconButton(
-            this.ctrl.isPlaying ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'),
-            28, (): void => {
+          PlayerBarIconButton({
+            icon: this.ctrl.isPlaying ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'),
+            iconSize: 28,
+            onTap: (): void => {
               this.ctrl.togglePlay();
-            })
-          this.BarIconButton($r('sys.symbol.backward_end_fill'), 22, (): void => {
-            this.ctrl.playPrev();
+            }
           })
-          this.BarIconButton($r('sys.symbol.forward_end_fill'), 22, (): void => {
-            this.ctrl.playNext();
+          PlayerBarIconButton({
+            icon: $r('sys.symbol.backward_end_fill'),
+            iconSize: 22,
+            onTap: (): void => {
+              this.ctrl.playPrev();
+            }
+          })
+          PlayerBarIconButton({
+            icon: $r('sys.symbol.forward_end_fill'),
+            iconSize: 22,
+            onTap: (): void => {
+              this.ctrl.playNext();
+            }
           })
           if (this.ctrl.isLandscape) {
-            this.BarIconButton($r('sys.symbol.gobackward_10'), 24, (): void => {
-              this.ctrl.rewind(10);
+            PlayerBarIconButton({
+              icon: $r('sys.symbol.gobackward_10'),
+              iconSize: 24,
+              onTap: (): void => {
+                this.ctrl.rewind(10);
+              }
             })
-            this.BarIconButton($r('sys.symbol.goforward_30'), 24, (): void => {
-              this.ctrl.fastForward(30);
+            PlayerBarIconButton({
+              icon: $r('sys.symbol.goforward_30'),
+              iconSize: 24,
+              onTap: (): void => {
+                this.ctrl.fastForward(30);
+              }
             })
           }
-          this.BarTextButton(`${this.ctrl.playbackSpeed}x`, (): void => {
-            showSpeedSheet(this.ctrl);
+          PlayerBarTextButton({
+            label: `${this.ctrl.playbackSpeed}x`,
+            onTap: (): void => {
+              showSpeedSheet(this.ctrl);
+            }
           })
           if (!this.ctrl.isUrlSource) {
-            this.BarTextButton(this.ctrl.qualityLabel(this.ctrl.currentQuality), (): void => {
-              showQualitySheet(this.ctrl);
+            PlayerBarTextButton({
+              label: this.ctrl.qualityLabel(this.ctrl.currentQuality),
+              onTap: (): void => {
+                showQualitySheet(this.ctrl);
+              }
             })
           }
           if (this.ctrl.isLandscape && !this.ctrl.isUrlSource) {
-            this.BarIconButton($r('sys.symbol.AI_subtitles'), 22, (): void => {
-              showSubtitleSheet(this.ctrl);
+            PlayerBarIconButton({
+              icon: $r('sys.symbol.AI_subtitles'),
+              iconSize: 22,
+              onTap: (): void => {
+                showSubtitleSheet(this.ctrl);
+              }
             })
-            this.BarIconButton($r('sys.symbol.music_note_list'), 22, (): void => {
-              showAudioSheet(this.ctrl);
+            PlayerBarIconButton({
+              icon: $r('sys.symbol.music_note_list'),
+              iconSize: 22,
+              onTap: (): void => {
+                showAudioSheet(this.ctrl);
+              }
             })
           }
-          this.BarIconButton($r('sys.symbol.more'), 22, (): void => {
-            showMoreSheet(this.ctrl);
+          PlayerBarIconButton({
+            icon: $r('sys.symbol.more'),
+            iconSize: 22,
+            onTap: (): void => {
+              showMoreSheet(this.ctrl);
+            }
           })
         }
         .padding({ right: 8 })
@@ -319,38 +423,6 @@ export struct VideoPlayerPage {
       left: 16,
       right: 16,
       bottom: 20 + this.navBarHeight
-    })
-  }
-
-  @Builder
-  BarIconButton(icon: Resource, size: number, onTap: () => void) {
-    Column() {
-      SymbolGlyph(icon)
-        .fontSize(size)
-        .fontColor([PLAYER_WHITE])
-    }
-    .justifyContent(FlexAlign.Center)
-    .width(44)
-    .height(44)
-    .onClick(() => {
-      onTap();
-    })
-  }
-
-  @Builder
-  BarTextButton(label: string, onTap: () => void) {
-    Column() {
-      Text(label)
-        .fontSize(15)
-        .fontColor(PLAYER_WHITE)
-        .maxLines(1)
-    }
-    .justifyContent(FlexAlign.Center)
-    .constraintSize({ minWidth: 44 })
-    .height(44)
-    .padding({ left: 8, right: 8 })
-    .onClick(() => {
-      onTap();
     })
   }
 

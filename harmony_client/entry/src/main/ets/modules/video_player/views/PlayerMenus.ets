@@ -103,7 +103,7 @@ struct SpeedSheetInner {
         ForEach(SPEED_OPTIONS, (speed: number) => {
           Text(`${speed}x`)
             .fontSize(14)
-            .fontColor('#FFFFFF')
+            .fontColor(this.p.ctrl.playbackSpeed === speed ? '#FFFFFF' : onSurface())
             .padding({ left: 18, right: 18, top: 9, bottom: 9 })
             .borderRadius(999)
             .backgroundColor(this.p.ctrl.playbackSpeed === speed ? accent() : AppTheme.current().cardBg)
