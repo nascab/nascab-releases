@@ -12,6 +12,7 @@ import { PhotoBackupController } from '../../photo_backup/controllers/PhotoBacku
 import { ConnectChannelManager } from '../../../core/network/ConnectChannelManager';
 import { ToastUtil } from '../../../common/ToastUtil';
 import { AppEventBus, EVENT_CONNECT_CHANNEL_CHANGED } from '../../../common/AppEventBus';
+import { MusicPlayService } from '../../music/service/MusicPlayService';
 
 /** 用户信息弹窗：对应 Flutter UserInfoDialog */
 @ComponentV2
@@ -195,6 +196,11 @@ export struct HomeUserInfoDialog {
     }
     this.isLoggingOut = true;
     try {
+      // 登出前停止音乐播放（有音乐正在播放时立即停止，避免登出后仍在后台播放）
+      const musicService = MusicPlayService.getInstance();
+      if (musicService.isPlaying) {
+        await musicService.stop();
+      }
       // 登出前取消进行中的相册备份上传（对齐 Flutter user_info_dialog → cancelAllRunning）
       PhotoBackupController.getInstance().cancelAllRunning();
       await AuthService.getInstance().logout();
