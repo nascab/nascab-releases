@@ -103,7 +103,7 @@ function sheetPanelMaxHeight(): number {
 // ================================ 倍速 ================================
 
 class SpeedSheetParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
 }
 
 const SPEED_OPTIONS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
@@ -130,13 +130,13 @@ struct SpeedSheetInner {
         ForEach(SPEED_OPTIONS, (speed: number) => {
           Text(`${speed}x`)
             .fontSize(14)
-            .fontColor(this.p.ctrl.playbackSpeed === speed ? '#FFFFFF' : onSurface())
+            .fontColor(this.p.ctrl?.playbackSpeed === speed ? '#FFFFFF' : onSurface())
             .padding({ left: 18, right: 18, top: 9, bottom: 9 })
             .borderRadius(999)
-            .backgroundColor(this.p.ctrl.playbackSpeed === speed ? accent() : AppTheme.current().cardBg)
+            .backgroundColor(this.p.ctrl?.playbackSpeed === speed ? accent() : AppTheme.current().cardBg)
             .margin({ right: 14, bottom: 8 })
             .onClick(() => {
-              this.p.ctrl.setSpeed(speed);
+              this.p.ctrl?.setSpeed(speed);
               this.p.close();
             })
         }, (speed: number): string => `${speed}`)
@@ -159,7 +159,7 @@ export function showSpeedSheet(ctrl: VideoPlayerController): void {
 // ================================ 画质 ================================
 
 class QualitySheetParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
 }
 
 @Builder
@@ -184,13 +184,13 @@ struct QualitySheetInner {
         ForEach(PLAYER_QUALITY_OPTIONS, (q: string): void => {
           ListItem() {
             Row({ space: 12 }) {
-              Text(this.p.ctrl.qualityLabel(q))
+              Text(this.p.ctrl?.qualityLabel(q) ?? q)
                 .fontSize(15)
                 .fontColor(onSurface())
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
-              if (this.p.ctrl.currentQuality === q) {
+              if (this.p.ctrl?.currentQuality === q) {
                 SymbolGlyph($r('sys.symbol.checkmark'))
                   .fontSize(18)
                   .fontColor([accent()])
@@ -199,7 +199,7 @@ struct QualitySheetInner {
             .width('100%')
             .padding({ left: 20, right: 20, top: 13, bottom: 13 })
             .onClick(() => {
-              this.p.ctrl.changeQuality(q);
+              this.p.ctrl?.changeQuality(q);
               this.p.close();
             })
           }
@@ -225,7 +225,7 @@ export function showQualitySheet(ctrl: VideoPlayerController): void {
 // ================================ 循环模式 ================================
 
 class LoopSheetParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
 }
 
 class LoopOption {
@@ -273,7 +273,7 @@ struct LoopSheetInner {
                 .fontSize(15)
                 .fontColor(onSurface())
                 .layoutWeight(1)
-              if (this.p.ctrl.loopMode === opt.key) {
+              if (this.p.ctrl?.loopMode === opt.key) {
                 SymbolGlyph($r('sys.symbol.checkmark'))
                   .fontSize(18)
                   .fontColor([accent()])
@@ -282,7 +282,7 @@ struct LoopSheetInner {
             .width('100%')
             .padding({ left: 20, right: 20, top: 13, bottom: 13 })
             .onClick(() => {
-              void this.p.ctrl.setLoopMode(opt.key);
+              void this.p.ctrl?.setLoopMode(opt.key);
               this.p.close();
             })
           }
@@ -306,7 +306,7 @@ export function showLoopSheet(ctrl: VideoPlayerController): void {
 // ================================ 音轨 ================================
 
 class AudioSheetParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
 }
 
 @Builder
@@ -319,10 +319,11 @@ struct AudioSheetInner {
   @Param p: AudioSheetParams = new AudioSheetParams();
 
   private labels(): string[] {
-    if (this.p.ctrl.audioTrackLabels.length === 0) {
+    const ctrl = this.p.ctrl;
+    if (ctrl === undefined || ctrl.audioTrackLabels.length === 0) {
       return [L10n.t('default', '默认')];
     }
-    return this.p.ctrl.audioTrackLabels;
+    return ctrl.audioTrackLabels;
   }
 
   build() {
@@ -344,7 +345,7 @@ struct AudioSheetInner {
                 .maxLines(2)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
-              if (this.p.ctrl.currentAudioTrack === t) {
+              if (this.p.ctrl?.currentAudioTrack === t) {
                 SymbolGlyph($r('sys.symbol.checkmark'))
                   .fontSize(18)
                   .fontColor([accent()])
@@ -354,7 +355,7 @@ struct AudioSheetInner {
             .padding({ left: 20, right: 20, top: 13, bottom: 13 })
             .onClick(() => {
               this.p.close();
-              void this.p.ctrl.setAudioTrack(t);
+              void this.p.ctrl?.setAudioTrack(t);
             })
           }
         }, (t: string, idx: number): string => `${idx}_${t}`)
@@ -379,7 +380,7 @@ export function showAudioSheet(ctrl: VideoPlayerController): void {
 // ================================ 字幕 ================================
 
 class SubtitleSheetParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
 }
 
 @Builder
@@ -408,13 +409,21 @@ struct SubtitleSheetInner {
 
   /** 外挂字幕是否可删除（source 非空且有 path） */
   private canDelete(label: string): boolean {
-    const t = findSubtitleTrack(this.p.ctrl, label);
+    const ctrl = this.p.ctrl;
+    if (ctrl === undefined) {
+      return false;
+    }
+    const t = findSubtitleTrack(ctrl, label);
     return t !== undefined && t.isExternal && t.source.trim().length > 0 && t.path.trim().length > 0;
   }
 
   private pickServerSubtitle(): void {
+    const ctrl = this.p.ctrl;
+    if (ctrl === undefined) {
+      return;
+    }
     this.p.close();
-    const videoPath = this.p.ctrl.currentSourcePathForInfo();
+    const videoPath = ctrl.currentSourcePathForInfo();
     pickServerFileViaSheet('', (paths: string[]): void => {
       if (paths.length === 0) {
         return;
@@ -432,7 +441,7 @@ struct SubtitleSheetInner {
         ToastUtil.show(L10n.t('player_cannot_get_video_path', '无法获取当前视频路径'));
         return;
       }
-      void this.p.ctrl.addAndSelectExternalSubtitle(subPath, baseName(subPath), '');
+      void ctrl.addAndSelectExternalSubtitle(subPath, baseName(subPath), '');
     });
   }
 
@@ -443,8 +452,12 @@ struct SubtitleSheetInner {
   }
 
   private async pickAndUploadLocalSubtitle(): Promise<void> {
+    const ctrl = this.p.ctrl;
+    if (ctrl === undefined) {
+      return;
+    }
     this.p.close();
-    const videoPath = this.p.ctrl.currentSourcePathForInfo();
+    const videoPath = ctrl.currentSourcePathForInfo();
     if (videoPath.length === 0) {
       ToastUtil.show(L10n.t('player_cannot_get_video_path', '无法获取当前视频路径'));
       return;
@@ -496,7 +509,7 @@ struct SubtitleSheetInner {
         ToastUtil.show(L10n.t('operation_failed', '操作失败'));
         return;
       }
-      await this.p.ctrl.addAndSelectExternalSubtitle(savedPath, savedName, 'uploaded');
+      await ctrl.addAndSelectExternalSubtitle(savedPath, savedName, 'uploaded');
       ToastUtil.show(L10n.t('player_subtitle_upload_success', '上传成功'));
     } catch (e) {
       await DialogUtil.dismissLoading();
@@ -535,8 +548,11 @@ struct SubtitleSheetInner {
       Column() {
         this.ActionRow($r('sys.symbol.magnifyingglass'),
           L10n.t('player_subtitle_search', '字幕搜索'), (): void => {
+            const ctrl = this.p.ctrl;
             this.p.close();
-            showSubtitleSearchSheet(this.p.ctrl);
+            if (ctrl !== undefined) {
+              showSubtitleSearchSheet(ctrl);
+            }
           })
         this.ActionRow($r('sys.symbol.cloud'),
           L10n.t('player_choose_server_subtitle', '选择服务器字幕'), (): void => {
@@ -553,7 +569,7 @@ struct SubtitleSheetInner {
         .margin({ top: 4, bottom: 4 })
       // 轨道列表
       List({ space: 0 }) {
-        ForEach(this.p.ctrl.subtitleTrackLabels, (label: string, index: number): void => {
+        ForEach(this.p.ctrl?.subtitleTrackLabels ?? [], (label: string, index: number): void => {
           ListItem() {
             Row({ space: 10 }) {
               Text(index === 0 ? '' : `${index}.`)
@@ -575,13 +591,14 @@ struct SubtitleSheetInner {
                 .width(36)
                 .height(36)
                 .onClick(() => {
-                  const t = findSubtitleTrack(this.p.ctrl, label);
-                  if (t !== undefined) {
-                    void this.p.ctrl.deleteExternalSubtitle(t.path);
+                  const ctrl = this.p.ctrl;
+                  const t = ctrl === undefined ? undefined : findSubtitleTrack(ctrl, label);
+                  if (ctrl !== undefined && t !== undefined) {
+                    void ctrl.deleteExternalSubtitle(t.path);
                   }
                 })
               }
-              if (this.p.ctrl.currentSubtitleTrack === label) {
+              if (this.p.ctrl?.currentSubtitleTrack === label) {
                 SymbolGlyph($r('sys.symbol.checkmark'))
                   .fontSize(18)
                   .fontColor([accent()])
@@ -591,7 +608,7 @@ struct SubtitleSheetInner {
             .padding({ left: 20, right: 20, top: 11, bottom: 11 })
             .onClick(() => {
               this.p.close();
-              void this.p.ctrl.setSubtitleTrack(label);
+              void this.p.ctrl?.setSubtitleTrack(label);
             })
           }
         }, (label: string, index: number): string => `${index}_${label}`)
@@ -646,7 +663,7 @@ export function showSubtitleSheet(ctrl: VideoPlayerController): void {
 // ================================ 字幕搜索 ================================
 
 class SubtitleSearchSheetParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
   videoPath: string = '';
   defaultKeyword: string = '';
 }
@@ -785,7 +802,7 @@ struct SubtitleSearchSheetInner {
         throw new Error(L10n.t('operation_failed', '操作失败'));
       }
       await DialogUtil.dismissLoading();
-      await this.p.ctrl.addAndSelectExternalSubtitle(savedPath, savedName, 'searched');
+      await this.p.ctrl?.addAndSelectExternalSubtitle(savedPath, savedName, 'searched');
       ToastUtil.show(L10n.t('player_subtitle_download_success', '字幕下载完成'));
     } catch (e) {
       await DialogUtil.dismissLoading();
@@ -983,7 +1000,7 @@ export function showSubtitleSearchSheet(ctrl: VideoPlayerController): void {
 // ================================ 更多操作 ================================
 
 class MoreSheetParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
 }
 
 class MoreMenuItem {
@@ -1011,6 +1028,9 @@ struct MoreSheetInner {
   private items(): MoreMenuItem[] {
     const ctrl = this.p.ctrl;
     const out: MoreMenuItem[] = [];
+    if (ctrl === undefined) {
+      return out;
+    }
     if (!ctrl.isUrlSource) {
       out.push(new MoreMenuItem($r('sys.symbol.AI_subtitles'),
         L10n.t('player_subtitle', '字幕'), (): void => {
@@ -1078,7 +1098,7 @@ export function showMoreSheet(ctrl: VideoPlayerController): void {
 // ================================ 视频信息抽屉 ================================
 
 class InfoDrawerParams extends SheetParamsBase {
-  ctrl: VideoPlayerController = new VideoPlayerController();
+  ctrl?: VideoPlayerController;
   filePath: string = '';
 }
 
@@ -1175,26 +1195,26 @@ struct InfoDrawerInner {
             this.InfoRow(L10n.t('filename', '文件名'), this.basicName)
             this.InfoRow(L10n.t('path', '路径'), this.basicPath)
             this.InfoRow(L10n.t('size', '大小'), this.basicSize)
-            this.InfoRow(L10n.t('duration', '时长'), this.formatDuration(this.p.ctrl.durationMs))
+            this.InfoRow(L10n.t('duration', '时长'), this.formatDuration(this.p.ctrl?.durationMs ?? 0))
             Text(L10n.t('media_streams', '媒体流信息'))
               .fontSize(15)
               .fontWeight(FontWeight.Medium)
               .fontColor(onSurface())
               .width('100%')
               .margin({ top: 20, bottom: 10 })
-            if (this.p.ctrl.videoTracks.length > 0) {
+            if ((this.p.ctrl?.videoTracks.length ?? 0) > 0) {
               this.StreamCategory(L10n.t('video_stream', '视频流'),
-                $r('sys.symbol.video'), this.p.ctrl.videoTracks)
+                $r('sys.symbol.video'), this.p.ctrl?.videoTracks ?? [])
               Row().height(14)
             }
-            if (this.p.ctrl.audioTracks.length > 0) {
+            if ((this.p.ctrl?.audioTracks.length ?? 0) > 0) {
               this.StreamCategory(L10n.t('audio_stream', '音频流'),
-                $r('sys.symbol.music_note_list'), this.p.ctrl.audioTracks)
+                $r('sys.symbol.music_note_list'), this.p.ctrl?.audioTracks ?? [])
               Row().height(14)
             }
-            if (this.p.ctrl.subtitleTracks.length > 0) {
+            if ((this.p.ctrl?.subtitleTracks.length ?? 0) > 0) {
               this.StreamCategory(L10n.t('subtitle_stream', '字幕流'),
-                $r('sys.symbol.AI_subtitles'), this.p.ctrl.subtitleTracks)
+                $r('sys.symbol.AI_subtitles'), this.p.ctrl?.subtitleTracks ?? [])
             }
           }
           .width('100%')
