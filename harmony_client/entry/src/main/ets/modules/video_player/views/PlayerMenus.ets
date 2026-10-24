@@ -1,7 +1,7 @@
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { display } from '@kit.ArkUI';
+import { display, window } from '@kit.ArkUI';
 import fs from '@ohos.file.fs';
 import { L10n } from '../../../core/localization/L10n';
 import { AppTheme } from '../../../core/theme/AppTheme';
@@ -9,6 +9,7 @@ import { APIClient } from '../../../core/network/APIClient';
 import { DialogUtil } from '../../../common/DialogUtil';
 import { ToastUtil } from '../../../common/ToastUtil';
 import { SheetHandle, SheetParamsBase, SheetUtil } from '../../../common/SheetUtil';
+import { WindowStore } from '../../../common/WindowStore';
 import { FileFormat } from '../../files/models/FileModels';
 import { pickServerFileViaSheet } from '../../files/views/FolderPickerSheet';
 import { UriReader } from '../../transfer/utils/UriReader';
@@ -72,6 +73,31 @@ function findSubtitleTrack(ctrl: VideoPlayerController, label: string): PlayerTr
     }
   }
   return undefined;
+}
+
+/**
+ * 弹层面板可用高度（vp）。
+ * 必须用当前窗口高度：横屏下 display.getDefaultDisplaySync().height 仍是竖屏物理高度，
+ * 面板会算出远超窗口的上限而被顶到状态栏上方。
+ * 再预留顶部系统避让区 + 下拉手势余量，避免面板顶部落在系统通知栏下拉手势区内。
+ */
+function sheetPanelMaxHeight(): number {
+  let winHeightVp = 0;
+  let topAvoidVp = 0;
+  try {
+    const w = WindowStore.getMainWindow();
+    if (w !== undefined) {
+      winHeightVp = px2vp(w.getWindowProperties().windowRect.height);
+      topAvoidVp = px2vp(w.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM).topRect.height);
+    }
+  } catch (_e) {
+    winHeightVp = 0;
+  }
+  if (winHeightVp <= 0) {
+    winHeightVp = px2vp(display.getDefaultDisplaySync().height);
+  }
+  const topGap = Math.max(topAvoidVp, 32);
+  return Math.max(160, Math.floor(winHeightVp - topGap - 16));
 }
 
 // ================================ 倍速 ================================
@@ -372,8 +398,7 @@ struct SubtitleSheetInner {
    * 否则顶部区域会被系统下拉手势占用，面板既无法下拉收起也无法正常操作。
    */
   private panelMaxHeight(): number {
-    const screenVp = Math.floor(px2vp(display.getDefaultDisplaySync().height));
-    return Math.max(200, screenVp - 72);
+    return sheetPanelMaxHeight();
   }
 
   /** 列表可用高度 = 面板上限 - 标题/操作项/间距等固定内容高度 */
@@ -664,11 +689,23 @@ struct SubtitleSearchSheetInner {
   @Local searchTab: number = 0;
   @Local keyword: string = '';
   @Local items: SubtitleSearchItem[] = [];
+  /** 下拉关闭时的面板位移 */
+  @Local dragOffsetY: number = 0;
   private apiService: VideoPlayerApiService = new VideoPlayerApiService();
 
   aboutToAppear(): void {
     this.keyword = this.p.defaultKeyword;
     void this.runFeatureThenMaybeFallback();
+  }
+
+  /** 面板最大高度：横屏下结果很多时不能顶进状态栏，否则无法下拉关闭（下拉会被系统通知栏抢走） */
+  private panelMaxHeight(): number {
+    return sheetPanelMaxHeight();
+  }
+
+  /** 列表可用高度 = 面板上限 - 标题/搜索栏/间距等固定内容高度 */
+  private listMaxHeight(): number {
+    return Math.max(56, Math.min(380, this.panelMaxHeight() - 180));
   }
 
   private async search(searchType: string): Promise<SubtitleSearchItem[]> {
@@ -758,13 +795,30 @@ struct SubtitleSearchSheetInner {
 
   build() {
     Column() {
-      SheetHandle()
-      Text(L10n.t('player_subtitle_search_results', '字幕搜索结果'))
-        .fontSize(16)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(onSurface())
-        .width('100%')
-        .padding({ left: 20, right: 20, top: 6, bottom: 8 })
+      // 顶部拖拽区：面板高度受限后仍可稳定下滑关闭，不会落到系统顶部下拉手势区
+      Column() {
+        SheetHandle()
+        Text(L10n.t('player_subtitle_search_results', '字幕搜索结果'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(onSurface())
+          .width('100%')
+          .padding({ left: 20, right: 20, top: 6, bottom: 8 })
+      }
+      .width('100%')
+      .gesture(
+        PanGesture({ direction: PanDirection.Down, distance: 8 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.dragOffsetY = Math.max(0, event.offsetY);
+          })
+          .onActionEnd((): void => {
+            if (this.dragOffsetY > 60) {
+              this.p.close();
+            } else {
+              this.dragOffsetY = 0;
+            }
+          })
+      )
       // tab 切换
       Row({ space: 8 }) {
         this.TabChip(L10n.t('player_subtitle_search_feature', '特征搜索'), 0)
@@ -867,13 +921,15 @@ struct SubtitleSearchSheetInner {
           }, (it: SubtitleSearchItem, index: number): string => `${index}_${it.surl}`)
         }
         .width('100%')
-        .constraintSize({ maxHeight: 380 })
+        .constraintSize({ maxHeight: this.listMaxHeight() })
         .scrollBar(BarState.Auto)
         .padding({ bottom: 24 })
       }
     }
     .borderRadius({ topLeft: 16, topRight: 16 })
     .backgroundColor(panelBg())
+    .constraintSize({ maxHeight: this.panelMaxHeight() })
+    .translate({ y: this.dragOffsetY })
   }
 
   @Builder

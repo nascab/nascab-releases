@@ -3,11 +3,11 @@
  * - 由 mpv 负责解封装、解码（ohcodec 硬解）与渲染（gpu-next + OHOS GL），
  *   相比系统 AVPlayer 支持更多容器/编码格式（MKV、RMVB、AVI、VVC 等）。
  * - 对外接口与控制器保持一致：position/duration/seek 均为毫秒，mpv 内部秒值在此转换。
- * - 音轨/字幕：mpv 自带渲染会被关闭（sid=no），字幕仍由控制器 VTT 叠层绘制，
- *   与原有 Flutter 端行为一致；音轨切换走后端 aid。
+ * - 音轨/字幕：文本字幕由控制器 VTT 叠层绘制（mpv sid=no）；
+ *   位图字幕（PGS/VobSub 等）由 mpv 原生渲染，无需转码烧录；音轨切换走后端 aid。
  */
 
-import { AudioTrack, Media, MpvLogLevel, Player, PlayerConfig, PlayerLog } from '@mpv-ohos/mpv-arkts';
+import { AudioTrack, Media, MpvLogLevel, Player, PlayerConfig, PlayerLog, SubtitleTrack } from '@mpv-ohos/mpv-arkts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'VideoPlayerEngine';
@@ -66,6 +66,8 @@ export class VideoPlayerEngine {
   private awaitingOpen: boolean = false;
   /** 当前容器的音轨（mpv track-list 顺序） */
   private audioTracks: AudioTrack[] = [];
+  /** 当前容器的内嵌字幕轨道（mpv track-list 顺序，mapIndex 与之一致） */
+  private subtitleTracks: SubtitleTrack[] = [];
 
   constructor() {
     // vo=gpu-next + ohos GL 上下文 + 硬解，等价于 mpv 桌面端默认渲染链路
@@ -75,8 +77,9 @@ export class VideoPlayerEngine {
       hwdec: true,
       logLevel: MpvLogLevel.Info
     }));
-    // 字幕统一由客户端 VTT 叠层绘制：在加载前设置一次 sid=no，避免在 open 的
-    // 关键加载阶段写属性干扰 demuxer/轨道初始化。
+    // 默认关闭 mpv 字幕渲染（文本字幕由客户端 VTT 叠层绘制）：在加载前设置一次 sid=no，
+    // 避免在 open 的关键加载阶段写属性干扰 demuxer/轨道初始化；
+    // 位图字幕由控制器在播放开始后显式选轨，交给 mpv 原生渲染。
     this.player.disableSubtitleTrack();
     // 强制保持宽高比：surface 尺寸变化（会话重建/页面重排）时也不会把画面拉伸变形
     this.player.native.setProperty('keepaspect', true);
@@ -156,6 +159,7 @@ export class VideoPlayerEngine {
     p.stream.tracks.listen((tracks): void => {
       if (!this.released) {
         this.audioTracks = tracks.audio;
+        this.subtitleTracks = tracks.subs;
         if (tracks.audio.length + tracks.video.length > 0) {
           if (this.awaitingOpen) {
             hilog.info(0x0000, TAG, 'tracks video=%{public}d audio=%{public}d',
@@ -311,6 +315,7 @@ export class VideoPlayerEngine {
       return;
     }
     this.audioTracks = this.player.state.tracks.audio;
+    this.subtitleTracks = this.player.state.tracks.subs;
   }
 
   /** 按同类序号（mapIndex，从 0 开始）切换音轨；返回是否成功 */
@@ -331,6 +336,44 @@ export class VideoPlayerEngine {
     return true;
   }
 
+  /**
+   * 按同类序号（mapIndex，从 0 开始）选中内嵌字幕，由 mpv 原生渲染。
+   * 文本字幕仍走客户端 VTT 叠层，此方法主要用于 PGS/VobSub 等 mpv 能直接渲染的位图字幕。
+   */
+  async selectSubtitleTrackByOrder(orderIndex: number): Promise<boolean> {
+    if (this.released) {
+      return false;
+    }
+    if (this.subtitleTracks.length === 0) {
+      this.subtitleTracks = this.player.state.tracks.subs;
+    }
+    if (orderIndex < 0 || orderIndex >= this.subtitleTracks.length) {
+      return false;
+    }
+    this.player.setSubtitleTrack(this.subtitleTracks[orderIndex]);
+    return true;
+  }
+
+  /**
+   * 挂载外挂字幕 URL（服务器 raw 文件直链），由 mpv 原生渲染，
+   * 支持 .sup/.sub/.idx 等客户端无法转成 VTT 的位图字幕。
+   */
+  loadExternalSubtitle(url: string, label: string, lang: string): boolean {
+    if (this.released || url.trim().length === 0) {
+      return false;
+    }
+    const language = lang.trim().length > 0 ? lang.trim() : 'und';
+    this.player.setSubtitleTrack(SubtitleTrack.uri(url, '', language, label));
+    return true;
+  }
+
+  /** 关闭 mpv 原生字幕渲染（文本字幕交给客户端 VTT 叠层时调用） */
+  disableSubtitle(): void {
+    if (!this.released) {
+      this.player.disableSubtitleTrack();
+    }
+  }
+
   /** 停止并复位（保留实例，可再次 open 复用） */
   async stop(): Promise<void> {
     this.prepared = false;
@@ -338,6 +381,7 @@ export class VideoPlayerEngine {
     this.awaitingOpen = false;
     this.durationMs = 0;
     this.audioTracks = [];
+    this.subtitleTracks = [];
     if (this.released) {
       return;
     }

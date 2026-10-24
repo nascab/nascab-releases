@@ -9,6 +9,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { util } from '@kit.ArkTS';
 import { L10n } from '../../core/localization/L10n';
 import { APIClient } from '../../core/network/APIClient';
+import { ApiUrls } from '../../core/network/ApiUrls';
 import { PreferencesStore } from '../../core/storage/PreferencesStore';
 import { ToastUtil } from '../../common/ToastUtil';
 import { DialogUtil } from '../../common/DialogUtil';
@@ -174,6 +175,7 @@ export class VideoPlayerController {
       onPlaying: (): void => {
         this.isPlaying = true;
         void this.applyOriginalAudioTrackAfterPlay();
+        void this.applySubtitleTrackAfterPlay();
       },
       onPaused: (): void => {
         this.isPlaying = false;
@@ -748,8 +750,8 @@ export class VideoPlayerController {
     return !isBitmapSubtitleExt(fileExt(t.path));
   }
 
-  /** 字幕是否需要转码烧录（位图内嵌/位图外挂） */
-  private subtitleNeedsBurn(label: string): boolean {
+  /** 是否为位图字幕（原画交给 mpv 原生渲染；转码需烧录进画面） */
+  private subtitleIsBitmap(label: string): boolean {
     if (label.length === 0 || label === this.noSubtitleLabel()) {
       return false;
     }
@@ -771,7 +773,7 @@ export class VideoPlayerController {
     if (this.currentQuality !== 'original') {
       return true;
     }
-    // 原画：内嵌字幕同样走客户端 VTT 叠层；位图需烧录
+    // 原画：文本字幕（含内嵌/外挂）同样走客户端 VTT 叠层；位图字幕由 mpv 原生渲染
     return true;
   }
 
@@ -779,24 +781,42 @@ export class VideoPlayerController {
     if (this.currentSubtitleTrack === trackLabel && !force) {
       return;
     }
-    const prevNeedsBurn = this.subtitleNeedsBurn(this.currentSubtitleTrack);
-    const nextNeedsBurn = this.subtitleNeedsBurn(trackLabel);
+    const prevBitmap = this.subtitleIsBitmap(this.currentSubtitleTrack);
+    const nextBitmap = this.subtitleIsBitmap(trackLabel);
     hilog.info(0x0000, TAG,
-      'setSubtitleTrack label=%{public}s prevBurn=%{public}s nextBurn=%{public}s quality=%{public}s',
-      trackLabel, String(prevNeedsBurn), String(nextNeedsBurn), this.currentQuality);
+      'setSubtitleTrack label=%{public}s prevBitmap=%{public}s nextBitmap=%{public}s quality=%{public}s',
+      trackLabel, String(prevBitmap), String(nextBitmap), this.currentQuality);
     this.currentSubtitleTrack = trackLabel;
     this.savePreference();
 
-    // 位图字幕在原画模式下无法渲染 → 自动切转码烧录
-    if (nextNeedsBurn && this.currentQuality === 'original') {
-      this.currentQuality = DEFAULT_TRANSCODE_QUALITY;
-      await this.initializePlayer(true, this.absolutePlaybackPositionMs());
+    if (this.currentQuality === 'original') {
+      // 原画：位图字幕（PGS/VobSub）交给 mpv 原生渲染，文本字幕走客户端 VTT 叠层，均无需转码
+      if (nextBitmap) {
+        this.webClearSubtitle();
+        const ok = await this.attachNativeBitmapSubtitle(trackLabel);
+        if (!ok) {
+          // mpv 确实挂不上时才回退转码烧录
+          hilog.warn(0x0000, TAG, 'native bitmap subtitle failed, fallback to transcode');
+          this.currentQuality = DEFAULT_TRANSCODE_QUALITY;
+          await this.initializePlayer(true, this.absolutePlaybackPositionMs());
+        }
+        return;
+      }
+      this.engine.disableSubtitle();
+      if (this.currentIsNoSubtitle) {
+        this.webClearSubtitle();
+        return;
+      }
+      await this.loadWebSubtitleIfNeeded(true);
       return;
     }
-    // 从烧录切回非烧录且当前是转码 → 重建会话去掉烧录
-    if (prevNeedsBurn && !nextNeedsBurn && this.currentQuality !== 'original') {
+
+    // 转码：位图字幕烧录进转码流，切换位图（或从位图切走）必须重建会话
+    if (nextBitmap || prevBitmap) {
       await this.initializePlayer(true, this.absolutePlaybackPositionMs());
-      await this.loadWebSubtitleIfNeeded(true);
+      if (!nextBitmap) {
+        await this.loadWebSubtitleIfNeeded(true);
+      }
       return;
     }
     if (this.currentIsNoSubtitle) {
@@ -806,8 +826,61 @@ export class VideoPlayerController {
     await this.loadWebSubtitleIfNeeded(true);
   }
 
+  /**
+   * 用 mpv 原生渲染位图字幕（内嵌按 mapIndex 选轨，外挂走服务器 raw 直链）。
+   * 返回 false 表示 mpv 无法挂载该字幕。
+   */
+  private async attachNativeBitmapSubtitle(label: string): Promise<boolean> {
+    const track = this.findTrackByLabel(this.subtitleTracks, label);
+    if (track === undefined) {
+      return false;
+    }
+    if (track.isExternal) {
+      const url = await ApiUrls.getRawFileUrl(track.path, true);
+      if (url.length === 0) {
+        return false;
+      }
+      hilog.info(0x0000, TAG, 'attach external bitmap subtitle %{public}s', track.label);
+      return this.engine.loadExternalSubtitle(url, track.label, track.language);
+    }
+    await this.engine.loadTracks();
+    const ok = await this.engine.selectSubtitleTrackByOrder(track.mapIndex);
+    hilog.info(0x0000, TAG, 'attach inner bitmap subtitle idx=%{public}d ok=%{public}s',
+      track.mapIndex, String(ok));
+    return ok;
+  }
+
+  /** 字幕恢复标记（mpv 每次加载新文件会重置 sid，需在播放开始后重新挂载） */
+  private subtitleAppliedGen: number = -1;
+
+  private async applySubtitleTrackAfterPlay(): Promise<void> {
+    if (this.subtitleAppliedGen === this.initGeneration) {
+      return;
+    }
+    this.subtitleAppliedGen = this.initGeneration;
+    if (this.currentQuality !== 'original') {
+      // 位图字幕已烧录进转码画面，关闭 mpv 原生字幕避免重复显示
+      this.engine.disableSubtitle();
+      return;
+    }
+    if (!this.currentIsNoSubtitle && this.subtitleIsBitmap(this.currentSubtitleTrack)) {
+      this.webClearSubtitle();
+      const ok = await this.attachNativeBitmapSubtitle(this.currentSubtitleTrack);
+      if (!ok) {
+        hilog.warn(0x0000, TAG, 'restore native bitmap subtitle failed label=%{public}s',
+          this.currentSubtitleTrack);
+      }
+      return;
+    }
+    this.engine.disableSubtitle();
+  }
+
   /** 打开/切换后应用客户端字幕叠层 */
   private async applyClientSubtitleOverlayIfNeeded(): Promise<void> {
+    if (this.currentQuality !== 'original') {
+      // 转码流里的位图字幕已由服务端烧录，关闭 mpv 原生字幕避免重复显示
+      this.engine.disableSubtitle();
+    }
     if (!this.useClientSubtitleOverlay()) {
       this.webClearSubtitle();
       return;
