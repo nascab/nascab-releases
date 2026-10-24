@@ -707,20 +707,24 @@ export class VideoPlayerController {
   private originalAudioAppliedGen: number = -1;
 
   private async applyOriginalAudioTrackAfterPlay(): Promise<void> {
-    if (this.currentQuality !== 'original') {
+    // 同字幕：playing 事件可能早于流信息到达，此时不消耗 applied 标记
+    if (this.currentQuality !== 'original' || this.audioTracks.length === 0 ||
+      this.currentAudioTrack.length === 0) {
       return;
     }
     if (this.originalAudioAppliedGen === this.initGeneration) {
       return;
     }
     this.originalAudioAppliedGen = this.initGeneration;
-    if (this.currentAudioTrack.length === 0 || this.currentQuality !== 'original') {
-      return;
-    }
     const track = this.findTrackByLabel(this.audioTracks, this.currentAudioTrack);
     if (track !== undefined && track.mapIndex > 0) {
       await this.engine.loadTracks();
-      await this.engine.selectAudioTrackByOrder(track.mapIndex);
+      let ok = await this.engine.selectAudioTrackByOrder(track.mapIndex);
+      // mpv 的 tracks 属性可能晚于 playing 事件到达，短暂等待后重试
+      for (let i = 0; i < 10 && !ok; i++) {
+        await sleepMs(100);
+        ok = await this.engine.selectAudioTrackByOrder(track.mapIndex);
+      }
     }
   }
 
@@ -844,7 +848,12 @@ export class VideoPlayerController {
       return this.engine.loadExternalSubtitle(url, track.label, track.language);
     }
     await this.engine.loadTracks();
-    const ok = await this.engine.selectSubtitleTrackByOrder(track.mapIndex);
+    let ok = await this.engine.selectSubtitleTrackByOrder(track.mapIndex);
+    // mpv 的 tracks 属性可能晚于 playing 事件到达，短暂等待后重试
+    for (let i = 0; i < 10 && !ok; i++) {
+      await sleepMs(100);
+      ok = await this.engine.selectSubtitleTrackByOrder(track.mapIndex);
+    }
     hilog.info(0x0000, TAG, 'attach inner bitmap subtitle idx=%{public}d ok=%{public}s',
       track.mapIndex, String(ok));
     return ok;
@@ -854,6 +863,11 @@ export class VideoPlayerController {
   private subtitleAppliedGen: number = -1;
 
   private async applySubtitleTrackAfterPlay(): Promise<void> {
+    // 引擎的 playing 事件可能早于流信息/偏好恢复到达（此时字幕列表为空）。
+    // 这种情况下不能消耗 applied 标记，否则真正起播后就再也不会恢复字幕。
+    if (this.subtitleTracks.length === 0 || this.currentSubtitleTrack.length === 0) {
+      return;
+    }
     if (this.subtitleAppliedGen === this.initGeneration) {
       return;
     }
