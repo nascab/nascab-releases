@@ -980,10 +980,14 @@ export class VideoPlayerController {
       this.resetControlsTimer();
       return;
     }
+    // 直接用乐观状态切换：mpv 的 pause 属性变更事件在 HLS/转码流下并不可靠，
+    // 若等回调再更新，图标不会切换，且再次点击仍会走 pause 分支导致无法继续播放。
     if (this.isPlaying) {
       this.engine.pause();
+      this.isPlaying = false;
     } else {
       this.engine.play();
+      this.isPlaying = true;
     }
     this.resetControlsTimer();
   }
