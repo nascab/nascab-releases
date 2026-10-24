@@ -200,17 +200,24 @@ export class VideoPlayerEngine {
     });
   }
 
-  /** mpv 的 video-params 在文件加载后更新，尺寸用于页面 letterbox */
+  /** mpv 的 video-params 在文件加载后更新，取校正后的显示尺寸用于页面 letterbox */
   private emitVideoSize(): void {
     const params = this.player.state.videoParams;
-    if (params.w > 0 && params.h > 0 &&
-      (params.w !== this.lastVideoWidth || params.h !== this.lastVideoHeight)) {
-      this.lastVideoWidth = params.w;
-      this.lastVideoHeight = params.h;
-      hilog.info(0x0000, TAG, 'video size %{public}dx%{public}d', params.w, params.h);
+    // w/h 未做像素比校正，dw/dh 才与实际显示比例一致；旋转 90/270 度时显示宽高需互换
+    let w = params.dw > 0 ? params.dw : params.w;
+    let h = params.dh > 0 ? params.dh : params.h;
+    if (params.rotate % 180 === 90 && w > 0 && h > 0) {
+      const swap = w;
+      w = h;
+      h = swap;
+    }
+    if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
+      this.lastVideoWidth = w;
+      this.lastVideoHeight = h;
+      hilog.info(0x0000, TAG, 'video size %{public}dx%{public}d', w, h);
       // 先解除看门狗，再回调上层：回调内部若抛异常，不能影响“已加载成功”的判定
       this.markLoaded('video-size');
-      this.cb.onVideoSize?.(params.w, params.h);
+      this.cb.onVideoSize?.(w, h);
     }
   }
 

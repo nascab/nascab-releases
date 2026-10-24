@@ -98,6 +98,8 @@ export struct VideoPlayerPage {
   @Local scrubCancelZone: boolean = false;
   private scrubOriginMs: number = 0;
   private playlistOpened: boolean = false;
+  /** 本次触摸按下时控制栏是否处于隐藏状态（此时首个手势仅用于唤出控制栏） */
+  private controlsHiddenAtTouchStart: boolean = false;
 
   aboutToAppear(): void {
     SystemBars.activate(this, { colors: SystemBars.immersiveColors(), fullscreen: true });
@@ -160,6 +162,11 @@ export struct VideoPlayerPage {
 
   private onScrubStart(e: GestureEvent): void {
     if (this.ctrl.isLocked || this.ctrl.isCtrlSpeedBoost) {
+      return;
+    }
+    // 控制栏隐藏时，首次触摸只负责唤出控制栏，不进入 scrub
+    if (!this.ctrl.showControls) {
+      this.ctrl.revealControls();
       return;
     }
     if (!this.ctrl.isInitialized || this.ctrl.durationMs <= 0) {
@@ -562,16 +569,34 @@ export struct VideoPlayerPage {
         Column()
           .width('100%')
           .height('100%')
+          .onTouch((ev: TouchEvent): void => {
+            if (ev.type === TouchType.Down) {
+              this.controlsHiddenAtTouchStart = !this.ctrl.showControls;
+            }
+          })
           .gesture(GestureGroup(GestureMode.Parallel,
             TapGesture({ count: 1 })
               .onAction((_e: GestureEvent): void => {
+                const wasHidden = this.controlsHiddenAtTouchStart;
+                this.controlsHiddenAtTouchStart = false;
+                // 控制栏隐藏时，首次点击只唤出控制栏，不执行显示/隐藏切换
+                if (wasHidden && !this.ctrl.isLocked) {
+                  this.ctrl.revealControls();
+                  return;
+                }
                 this.ctrl.handlePlayerTap();
               }),
             LongPressGesture({ repeat: false, duration: 450 })
               .onAction((_e: GestureEvent): void => {
-                if (!this.ctrl.isLocked) {
-                  this.ctrl.setCtrlSpeedBoost(true);
+                if (this.ctrl.isLocked) {
+                  return;
                 }
+                // 控制栏隐藏时，首次长按只唤出控制栏，不触发倍速
+                if (!this.ctrl.showControls) {
+                  this.ctrl.revealControls();
+                  return;
+                }
+                this.ctrl.setCtrlSpeedBoost(true);
               })
               .onActionEnd((_e: GestureEvent): void => {
                 this.ctrl.setCtrlSpeedBoost(false);
@@ -602,6 +627,8 @@ export struct VideoPlayerPage {
         .padding({ top: this.statusBarHeight })
         .linearGradient({ angle: 180, colors: [['#8F000000', 0], ['#00000000', 1]] })
         .position({ x: 0, y: 0 })
+        // 隐藏时同时移除子节点的命中测试：仅设 hitTestBehavior(None) 时子节点仍会响应（如返回/信息按钮）
+        .visibility(this.ctrl.showControls ? Visibility.Visible : Visibility.None)
         .opacity(this.ctrl.showControls ? 1 : 0)
         .animation({ duration: 300, curve: Curve.EaseOut })
         .hitTestBehavior(this.ctrl.showControls ? HitTestMode.Default : HitTestMode.None)
@@ -656,6 +683,8 @@ export struct VideoPlayerPage {
         .position({ x: 0, y: '100%' })
         .markAnchor({ y: '100%' })
         .linearGradient({ angle: 0, colors: [['#8F000000', 0], ['#00000000', 1]] })
+        // 隐藏时同时移除子节点的命中测试：仅设 hitTestBehavior(None) 时进度条等子节点仍会响应触摸
+        .visibility(this.ctrl.showControls ? Visibility.Visible : Visibility.None)
         .opacity(this.ctrl.showControls ? 1 : 0)
         .animation({ duration: 300, curve: Curve.EaseOut })
         .hitTestBehavior(this.ctrl.showControls ? HitTestMode.Default : HitTestMode.None)

@@ -1483,6 +1483,15 @@ export class VideoPlayerController {
     }
   }
 
+  /** 唤出控制栏并重置自动隐藏计时（已显示或被锁定时不做任何事） */
+  revealControls(): void {
+    if (this.isLocked || this.showControls) {
+      return;
+    }
+    this.showControls = true;
+    this.resetControlsTimer();
+  }
+
   resetControlsTimer(): void {
     if (this.isLocked) {
       return;
