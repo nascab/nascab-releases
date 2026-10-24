@@ -11,8 +11,6 @@ import { AudioTrack, Media, MpvLogLevel, Player, PlayerConfig, PlayerLog } from 
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'VideoPlayerEngine';
-/** 媒体加载超时（毫秒）：mpv 自身没有 prepare 超时，超时后交给控制器重试/降级 */
-const ENGINE_LOAD_TIMEOUT_MS = 15000;
 /** mpv error 日志中真正表示“文件/流打不开”的关键字（其余多为可恢复错误） */
 const FATAL_OPEN_ERROR_KEYWORDS: string[] = [
   'failed to open',
@@ -24,6 +22,11 @@ const FATAL_OPEN_ERROR_KEYWORDS: string[] = [
 
 function isFatalOpenError(message: string): boolean {
   const m = message.toLowerCase();
+  // HLS 分片偶发 404/重试是可恢复的（服务端产片需要时间、切换时旧会话被停止），
+  // 不能当作“打不开”处理，否则会触发控制器反复重建会话。
+  if (m.indexOf('segment') >= 0 || m.indexOf('hls:') >= 0) {
+    return false;
+  }
   for (const k of FATAL_OPEN_ERROR_KEYWORDS) {
     if (m.indexOf(k) >= 0) {
       return true;
@@ -57,11 +60,10 @@ export class VideoPlayerEngine {
   private durationMs: number = 0;
   private lastSpeed: number = 1.0;
   private lastVolume: number = 1.0;
-  /** 本次媒体是否已开始出画/推进（用于加载看门狗） */
+  /** 本次媒体是否已开始出画/推进 */
   private started: boolean = false;
   /** 是否处于“已发起 open、尚未加载成功”的窗口期（期间才上报打开失败） */
   private awaitingOpen: boolean = false;
-  private loadWatchdogTimer: number = -1;
   /** 当前容器的音轨（mpv track-list 顺序） */
   private audioTracks: AudioTrack[] = [];
 
@@ -71,7 +73,7 @@ export class VideoPlayerEngine {
       vo: 'gpu-next',
       gpuContext: 'ohos',
       hwdec: true,
-      logLevel: MpvLogLevel.Warn
+      logLevel: MpvLogLevel.Info
     }));
     // 字幕统一由客户端 VTT 叠层绘制：在加载前设置一次 sid=no，避免在 open 的
     // 关键加载阶段写属性干扰 demuxer/轨道初始化。
@@ -108,9 +110,7 @@ export class VideoPlayerEngine {
     p.stream.position.listen((seconds: number): void => {
       if (!this.released) {
         if (seconds > 0) {
-          this.started = true;
-          this.awaitingOpen = false;
-          this.clearLoadWatchdog();
+          this.markLoaded('position');
         }
         // 部分文件 duration 先于 video-params 到达，首个位置事件时补一次尺寸
         if (this.lastVideoWidth === 0) {
@@ -128,10 +128,7 @@ export class VideoPlayerEngine {
       if (ms <= 0) {
         return;
       }
-      this.prepared = true;
-      this.started = true;
-      this.awaitingOpen = false;
-      this.clearLoadWatchdog();
+      this.markLoaded('duration');
       this.durationMs = ms;
       this.emitVideoSize();
       this.cb.onPrepared?.(ms);
@@ -140,27 +137,47 @@ export class VideoPlayerEngine {
     // demuxer-cache-time：已缓存到的位置（秒）
     p.stream.buffer.listen((seconds: number): void => {
       if (!this.released) {
+        if (this.awaitingOpen) {
+          hilog.info(0x0000, TAG, 'load buffer %{public}d s', Math.round(seconds));
+        }
         this.cb.onBuffered?.(Math.max(0, Math.round(seconds * 1000)));
       }
     });
 
     p.stream.eof.listen((eof: boolean): void => {
-      if (!this.released && eof && this.prepared) {
-        this.cb.onCompleted?.();
+      if (!this.released && eof) {
+        hilog.info(0x0000, TAG, 'eof reached, prepared=%{public}s', String(this.prepared));
+        if (this.prepared) {
+          this.cb.onCompleted?.();
+        }
       }
     });
 
     p.stream.tracks.listen((tracks): void => {
       if (!this.released) {
         this.audioTracks = tracks.audio;
+        if (tracks.audio.length + tracks.video.length > 0) {
+          if (this.awaitingOpen) {
+            hilog.info(0x0000, TAG, 'tracks video=%{public}d audio=%{public}d',
+              tracks.video.length, tracks.audio.length);
+          }
+          this.markLoaded('tracks');
+        }
         this.emitVideoSize();
       }
     });
 
-    // mpv 的 warn 日志对定位 HLS/demuxer 加载问题很关键，原样转发到 hilog
+    // mpv 日志对定位 HLS/demuxer 加载问题很关键，info/warn/error 原样转发到 hilog
     p.stream.log.listen((log: PlayerLog): void => {
-      if (!this.released && log.level === 'warn') {
+      if (this.released) {
+        return;
+      }
+      if (log.level === 'warn') {
         hilog.warn(0x0000, TAG, 'mpv warn [%{public}s] %{public}s', log.prefix, log.text);
+      } else if (log.level === 'error') {
+        hilog.error(0x0000, TAG, 'mpv error [%{public}s] %{public}s', log.prefix, log.text);
+      } else {
+        hilog.info(0x0000, TAG, 'mpv info [%{public}s] %{public}s', log.prefix, log.text);
       }
     });
 
@@ -174,7 +191,6 @@ export class VideoPlayerEngine {
       hilog.warn(0x0000, TAG, 'mpv error: %{public}s', message);
       if (this.awaitingOpen && !this.prepared && !this.started && isFatalOpenError(message)) {
         this.awaitingOpen = false;
-        this.clearLoadWatchdog();
         this.notifyError(message);
       }
     });
@@ -188,6 +204,8 @@ export class VideoPlayerEngine {
       this.lastVideoWidth = params.w;
       this.lastVideoHeight = params.h;
       hilog.info(0x0000, TAG, 'video size %{public}dx%{public}d', params.w, params.h);
+      // 先解除看门狗，再回调上层：回调内部若抛异常，不能影响“已加载成功”的判定
+      this.markLoaded('video-size');
       this.cb.onVideoSize?.(params.w, params.h);
     }
   }
@@ -200,23 +218,14 @@ export class VideoPlayerEngine {
     this.cb.onError?.(message);
   }
 
-  /** 媒体加载超时兜底：mpv 自身没有 prepare 超时，避免一直停住无反馈 */
-  private armLoadWatchdog(): void {
-    this.clearLoadWatchdog();
-    this.loadWatchdogTimer = setTimeout((): void => {
-      this.loadWatchdogTimer = -1;
-      if (this.released || !this.awaitingOpen || this.prepared || this.started) {
-        return;
-      }
-      this.awaitingOpen = false;
-      this.notifyError('media load timeout');
-    }, ENGINE_LOAD_TIMEOUT_MS);
-  }
-
-  private clearLoadWatchdog(): void {
-    if (this.loadWatchdogTimer !== -1) {
-      clearTimeout(this.loadWatchdogTimer);
-      this.loadWatchdogTimer = -1;
+  /** 收到任意“媒体已成功打开”的信号（video-params/track-list/duration/position） */
+  private markLoaded(source: string): void {
+    const wasAwaiting = this.awaitingOpen;
+    this.awaitingOpen = false;
+    this.prepared = true;
+    this.started = true;
+    if (wasAwaiting) {
+      hilog.info(0x0000, TAG, 'media loaded by %{public}s', source);
     }
   }
 
@@ -225,7 +234,6 @@ export class VideoPlayerEngine {
     if (this.released) {
       return;
     }
-    this.clearLoadWatchdog();
     this.prepared = false;
     this.started = false;
     this.awaitingOpen = true;
@@ -238,10 +246,8 @@ export class VideoPlayerEngine {
       Math.round(startSec), String(autoPlay), maskUrl(url));
     try {
       this.player.open(media, autoPlay);
-      this.armLoadWatchdog();
     } catch (e) {
       this.awaitingOpen = false;
-      this.clearLoadWatchdog();
       this.notifyError(`open failed: ${JSON.stringify(e)}`);
     }
   }
@@ -327,7 +333,6 @@ export class VideoPlayerEngine {
 
   /** 停止并复位（保留实例，可再次 open 复用） */
   async stop(): Promise<void> {
-    this.clearLoadWatchdog();
     this.prepared = false;
     this.started = false;
     this.awaitingOpen = false;
@@ -344,7 +349,6 @@ export class VideoPlayerEngine {
     if (this.released) {
       return;
     }
-    this.clearLoadWatchdog();
     this.released = true;
     this.prepared = false;
     this.started = false;

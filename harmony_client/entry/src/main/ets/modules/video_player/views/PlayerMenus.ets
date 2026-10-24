@@ -1,6 +1,7 @@
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { display } from '@kit.ArkUI';
 import fs from '@ohos.file.fs';
 import { L10n } from '../../../core/localization/L10n';
 import { AppTheme } from '../../../core/theme/AppTheme';
@@ -363,6 +364,22 @@ function SubtitleSheetContent(p: SubtitleSheetParams) {
 @ComponentV2
 struct SubtitleSheetInner {
   @Param p: SubtitleSheetParams = new SubtitleSheetParams();
+  /** 下拉关闭时的面板位移 */
+  @Local dragOffsetY: number = 0;
+
+  /**
+   * 面板最大高度：横屏下窗口高度很小，字幕多时面板不能顶到状态栏/顶部下拉手势区，
+   * 否则顶部区域会被系统下拉手势占用，面板既无法下拉收起也无法正常操作。
+   */
+  private panelMaxHeight(): number {
+    const screenVp = Math.floor(px2vp(display.getDefaultDisplaySync().height));
+    return Math.max(200, screenVp - 72);
+  }
+
+  /** 列表可用高度 = 面板上限 - 标题/操作项/间距等固定内容高度 */
+  private listMaxHeight(): number {
+    return Math.max(56, Math.min(380, this.panelMaxHeight() - 220));
+  }
 
   /** 外挂字幕是否可删除（source 非空且有 path） */
   private canDelete(label: string): boolean {
@@ -465,13 +482,30 @@ struct SubtitleSheetInner {
 
   build() {
     Column() {
-      SheetHandle()
-      Text(L10n.t('player_subtitle', '字幕'))
-        .fontSize(16)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(onSurface())
-        .width('100%')
-        .padding({ left: 20, right: 20, top: 6, bottom: 4 })
+      // 顶部拖拽区：横屏下也可靠下滑关闭
+      Column() {
+        SheetHandle()
+        Text(L10n.t('player_subtitle', '字幕'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(onSurface())
+          .width('100%')
+          .padding({ left: 20, right: 20, top: 6, bottom: 4 })
+      }
+      .width('100%')
+      .gesture(
+        PanGesture({ direction: PanDirection.Down, distance: 8 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.dragOffsetY = Math.max(0, event.offsetY);
+          })
+          .onActionEnd((): void => {
+            if (this.dragOffsetY > 60) {
+              this.p.close();
+            } else {
+              this.dragOffsetY = 0;
+            }
+          })
+      )
       // 操作项
       Column() {
         this.ActionRow($r('sys.symbol.magnifyingglass'),
@@ -538,12 +572,14 @@ struct SubtitleSheetInner {
         }, (label: string, index: number): string => `${index}_${label}`)
       }
       .width('100%')
-      .constraintSize({ maxHeight: 380 })
+      .constraintSize({ maxHeight: this.listMaxHeight() })
       .scrollBar(BarState.Auto)
       .padding({ bottom: 20 })
     }
     .borderRadius({ topLeft: 16, topRight: 16 })
     .backgroundColor(panelBg())
+    .constraintSize({ maxHeight: this.panelMaxHeight() })
+    .translate({ y: this.dragOffsetY })
   }
 
   @Builder

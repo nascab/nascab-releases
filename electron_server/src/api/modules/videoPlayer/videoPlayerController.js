@@ -681,6 +681,8 @@ class VideoPlayerController {
       const subtitleTrackIndex = subtitleIndex !== undefined ? Number(subtitleIndex) : undefined;
 
       const w = width !== undefined ? Number(width) : undefined;
+      // 转码请求到达日志：用于确认客户端（mpv/HLS）是否真的发起了请求
+      console.log(`[transcode] request playId=${playIdStr} seek=${seekSeconds} device=${deviceIdStr} at=${Date.now()}`);
       const playbackSource = await videoPlayerService.resolvePlaybackSource(filePath);
       const transcodeInputPath = playbackSource.playableFilePath;
 
@@ -883,7 +885,9 @@ class VideoPlayerController {
 
       if (!ok) {
         const maxWaitMs = isM3u8 ? 20000 : 60000;
-        const deadline = Date.now() + maxWaitMs;
+        const waitStartAt = Date.now();
+        console.log(`[hls] segment missing, waiting playId=${playId} file=${filename} maxWait=${maxWaitMs}ms at=${waitStartAt}`);
+        const deadline = waitStartAt + maxWaitMs;
         while (Date.now() < deadline) {
           if (fs.existsSync(filePath)) {
             const stat = fs.statSync(filePath);
@@ -894,6 +898,7 @@ class VideoPlayerController {
           }
           await new Promise(r => setTimeout(r, 200));
         }
+        console.log(`[hls] segment ${ok ? 'ready' : 'timeout'} playId=${playId} file=${filename} waited=${Date.now() - waitStartAt}ms`);
       }
 
       if (!ok) return res.status(404).send('Not Found');

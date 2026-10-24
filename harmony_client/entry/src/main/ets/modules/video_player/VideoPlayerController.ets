@@ -123,6 +123,10 @@ export class VideoPlayerController {
   private engine: VideoPlayerEngine = new VideoPlayerEngine();
   private apiService = new VideoPlayerApiService();
   private playId: string | undefined = undefined;
+  /** 切换前待停止的转码会话：等新地址打开后再停，避免旧 demuxer 大量 404 */
+  private stalePlayId: string | undefined = undefined;
+  /** 转码播放位置日志去重（每 5s 一条） */
+  private lastTranscodePosBucket: number = -1;
   private transcodeBaseSeconds: number = 0;
   private pendingTranscodeSeekMs: number = -1;
   private transcodeSeekTimer: number = -1;
@@ -256,20 +260,21 @@ export class VideoPlayerController {
     if (this.currentQuality === 'original' || this.transcodeBaseSeconds <= 0) {
       return Math.max(0, ms);
     }
-    const relSec = Math.floor(ms / 1000);
-    if (relSec >= this.transcodeBaseSeconds) {
-      return Math.max(0, ms);
-    }
+    // mpv 上报的 time-pos 始终相对当前打开的转码流（从 0 开始），直接叠加起点偏移即可。
+    // 不再沿用 Flutter/Media3 的“超过 base 视为绝对时间”启发式：那会让进度在
+    // 播放到 base 秒时突然回退，并影响完播判定。
     return this.transcodeBaseSeconds * 1000 + ms;
   }
 
-  private async initializePlayer(keepPosition: boolean, switchPositionMs: number): Promise<void> {
+  private async initializePlayer(keepPosition: boolean, switchPositionMs: number,
+    reusePlayId: boolean = false): Promise<void> {
     const gen = ++this.initGeneration;
     this.clearTranscodeSeekTimer();
+    this.lastTranscodePosBucket = -1;
     this.isPreparing = true;
     this.isPlaying = false;
-    hilog.info(0x0000, TAG, 'initializePlayer quality=%{public}s keepPosition=%{public}s switchMs=%{public}d',
-      this.currentQuality, String(keepPosition), switchPositionMs);
+    hilog.info(0x0000, TAG, 'initializePlayer quality=%{public}s keepPosition=%{public}s switchMs=%{public}d reusePlayId=%{public}s',
+      this.currentQuality, String(keepPosition), switchPositionMs, String(reusePlayId));
     const lastPositionMs = switchPositionMs >= 0 ? switchPositionMs : this.positionMs;
     const originalSeekAfterInitMs =
       this.currentQuality === 'original' && keepPosition ? lastPositionMs : -1;
@@ -279,11 +284,13 @@ export class VideoPlayerController {
       this.resumeSeekBakedIntoUrlSec = -1;
     }
 
-    // 停止旧转码会话
+    // 旧转码会话先记下来，等新地址成功打开后再停止：
+    // 若在 open 之前就 /stop，服务端会删掉旧输出目录，仍在运行的旧 demuxer 会持续 404 重试。
     const prevPlayId = this.playId;
     this.playId = undefined;
-    if (prevPlayId !== undefined && prevPlayId.length > 0) {
-      void this.apiService.stopTranscode(prevPlayId);
+    const willReuseTranscode = reusePlayId && prevPlayId !== undefined && prevPlayId.length > 0;
+    if (prevPlayId !== undefined && prevPlayId.length > 0 && !willReuseTranscode) {
+      this.stalePlayId = prevPlayId;
     }
     // 停掉旧引擎播放（保留实例复用）。必须 await：否则 stop 内部的 reset 会在 open 之后执行，
     // 把刚写入的新地址复位掉，导致切换画质后卡住不播。
@@ -319,7 +326,13 @@ export class VideoPlayerController {
     }
 
     if (this.currentQuality !== 'original') {
-      this.playId = generatePlayId();
+      if (willReuseTranscode && prevPlayId !== undefined) {
+        // 加载超时重试：沿用同一转码会话，避免服务端重新转码、用户反复看到同一片段
+        this.playId = prevPlayId;
+        hilog.info(0x0000, TAG, 'reuse transcode session playId=%{public}s', prevPlayId);
+      } else {
+        this.playId = generatePlayId();
+      }
     }
 
     if (!keepPosition && !isUrl) {
@@ -359,7 +372,8 @@ export class VideoPlayerController {
 
     this.isPreparing = false;
     this.isInitialized = true;
-    this.reloadRetryCount = 0;
+    // 注意：此处不再重置 reloadRetryCount，否则 handlePlaybackFailure 的自增会被清零，
+    // 造成「超时 → 重建会话 → 超时」无限循环（reloadRetryCount 仅在切片源时重置）。
     this.isRecoveringFromError = false;
 
     // 字幕：转码/外挂文本走客户端叠层
@@ -425,6 +439,8 @@ export class VideoPlayerController {
     if (this.isClosedOrGeneration(gen)) {
       return;
     }
+    // 新地址已经发起打开，此时再停止上一个转码会话（避免旧 demuxer 立刻 404 重试）
+    this.stopStaleTranscode();
     this.engine.setSpeed(this.playbackSpeed);
     this.engine.setVolume(this.volume);
     this.isInitialized = true;
@@ -434,6 +450,24 @@ export class VideoPlayerController {
     }
     this.resetControlsTimer();
     this.startAutoSave();
+  }
+
+  /** 停止切换前遗留的转码会话（新地址已发起打开后再调用） */
+  private stopStaleTranscode(): void {
+    const stale = this.stalePlayId;
+    this.stalePlayId = undefined;
+    if (stale === undefined || stale.length === 0 || stale === this.playId) {
+      return;
+    }
+    const startedAt = Date.now();
+    this.apiService.stopTranscode(stale)
+      .then((): void => {
+        hilog.info(0x0000, TAG, 'stopTranscode done playId=%{public}s cost=%{public}d ms',
+          stale, Date.now() - startedAt);
+      })
+      .catch((): void => {
+        hilog.warn(0x0000, TAG, 'stopTranscode failed playId=%{public}s', stale);
+      });
   }
 
   private isClosedOrGeneration(gen: number): boolean {
@@ -1059,6 +1093,8 @@ export class VideoPlayerController {
     const switchPos = this.absolutePlaybackPositionMs();
     this.currentQuality = quality;
     this.positionMs = switchPos;
+    // 用户主动切换画质属于新的播放意图，重置失败重试计数
+    this.reloadRetryCount = 0;
     void this.initializePlayer(true, switchPos);
   }
 
@@ -1084,6 +1120,19 @@ export class VideoPlayerController {
   private onEnginePosition(enginePosMs: number): void {
     if (this.isClosingPlayer || !this.isInitialized) {
       return;
+    }
+    // 播放位置已经推进说明本次加载确实成功，清零失败重试计数：
+    // 否则一次加载超时会把计数永久留在高位，之后任何偶发错误都会直接弹「播放出错」。
+    if (enginePosMs > 0 && this.reloadRetryCount !== 0) {
+      this.reloadRetryCount = 0;
+    }
+    if (this.currentQuality !== 'original') {
+      // 转码流每推进 5s 打一条日志，便于确认播放是否真的在推进（HLS 事件可能稀疏）
+      const bucket = Math.floor(enginePosMs / 5000);
+      if (bucket !== this.lastTranscodePosBucket) {
+        this.lastTranscodePosBucket = bucket;
+        hilog.info(0x0000, TAG, 'transcode pos=%{public}d ms', Math.round(enginePosMs));
+      }
     }
     const pendingSeek = this.pendingTranscodeSeekMs;
     if (this.currentQuality !== 'original') {
@@ -1235,6 +1284,9 @@ export class VideoPlayerController {
     if (this.isClosingPlayer || this.isRecoveringFromError) {
       return;
     }
+    hilog.warn(0x0000, TAG, 'playback failure quality=%{public}s retry=%{public}d positionMs=%{public}d enginePos=%{public}d playId=%{public}s',
+      this.currentQuality, this.reloadRetryCount, Math.round(this.positionMs),
+      this.engine.getCurrentPosition(), String(this.playId));
     // 原画直链失败 → 自动切转码（对齐 TV/Android 行为）
     if (this.currentQuality === 'original') {
       if (!this.autoSwitchedToTranscode) {
@@ -1253,6 +1305,9 @@ export class VideoPlayerController {
       }
     } else {
       if (this.reloadRetryCount < MAX_RELOAD_RETRIES) {
+        // 首次失败：沿用同一转码会话重开（服务端分片继续产出，不会重新转码）；
+        // 再次失败才换新 playId 重建会话。
+        const reusePlayId = this.reloadRetryCount === 0 && this.playId !== undefined;
         this.isRecoveringFromError = true;
         this.isInitialized = false;
         this.reloadRetryCount++;
@@ -1261,7 +1316,7 @@ export class VideoPlayerController {
         if (this.isClosingPlayer) {
           return;
         }
-        await this.initializePlayer(true, this.positionMs);
+        await this.initializePlayer(true, this.positionMs, reusePlayId);
         return;
       }
     }
@@ -1499,6 +1554,15 @@ export class VideoPlayerController {
       this.playId = undefined;
       try {
         await this.apiService.stopTranscode(pid);
+      } catch (_e) {
+        // 忽略
+      }
+    }
+    if (this.stalePlayId !== undefined && this.stalePlayId.length > 0) {
+      const stale = this.stalePlayId;
+      this.stalePlayId = undefined;
+      try {
+        await this.apiService.stopTranscode(stale);
       } catch (_e) {
         // 忽略
       }
